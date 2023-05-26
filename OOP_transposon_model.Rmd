@@ -448,6 +448,8 @@ for (generation in 1:number_of_generations) {
 
 ## Run a test including transposition
 
+In this simulation, the same simulation occurs as above, but transposition also happens within each bacterium in each generation:
+
 ``` {r Defining a population with transposition}
 
 population_size = 20
@@ -560,14 +562,14 @@ calculate_population_sequence_composition <- function(my_population) {
   for (bacterium_index in 1:population_size) {
     my_bacterium <- my_population[[bacterium_index]]
     pop_info.df$bacterium_labels[[bacterium_index]] <- my_bacterium$label
-    pop_info.df$gene_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"gene")
-    pop_info.df$gene_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"gene")
-    pop_info.df$transposon_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"transposon")
-    pop_info.df$transposon_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"transposon")
-    pop_info.df$pseudogene_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"pseudogene")
-    pop_info.df$pseudogene_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"pseudogene")
-    pop_info.df$intergenic_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"intergenic")
-    pop_info.df$intergenic_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"intergenic")
+    pop_info.df$gene_count[[bacterium_index]] <- count_loci(my_bacterium$genotype,"gene")
+    pop_info.df$gene_length[[bacterium_index]] <- sum_locus_lengths(my_bacterium$genotype,"gene")
+    pop_info.df$transposon_count[[bacterium_index]] <- count_loci(my_bacterium$genotype,"transposon")
+    pop_info.df$transposon_length[[bacterium_index]] <- sum_locus_lengths(my_bacterium$genotype,"transposon")
+    pop_info.df$pseudogene_count[[bacterium_index]] <- count_loci(my_bacterium$genotype,"pseudogene")
+    pop_info.df$pseudogene_length[[bacterium_index]] <- sum_locus_lengths(my_bacterium$genotype,"pseudogene")
+    pop_info.df$intergenic_count[[bacterium_index]] <- count_loci(my_bacterium$genotype,"intergenic")
+    pop_info.df$intergenic_length[[bacterium_index]] <- sum_locus_lengths(my_bacterium$genotype,"intergenic")
   }
   
   print(pop_info.df)
@@ -576,11 +578,15 @@ calculate_population_sequence_composition <- function(my_population) {
 
 ```
 
+These are the statistics for the starting population:
+
 ``` {r Starting population statistics}
 
 calculate_population_sequence_composition(starting_population)
 
 ```
+
+These are the statistics for the final population:
 
 ``` {r Final population statistics}
 
@@ -588,3 +594,8 @@ calculate_population_sequence_composition(current_generation)
 
 ```
 
+Note that all the final population have the same label, meaning that drift has eliminated all but one of the starting genotypes. The total length of intergenic sequence is the same as the starting population, because we assumine intergenic sequence to be neutral, and therefore it is not converted to being a pseudogene, even though it will contain insertions. The total length of genes is the number of genes * 900 bp (the default length), so their lengths are being correctly calculated. The pseudogene lengths are all multiples of 900 bp as well, which suggests no sequence is being lost in the fragmentation of genes. The number of pseudogenes is larger than the number of disrupted genes, because transposons are also converted to pseudogenes when disrupted by an insertion.
+
+## Analysis to run
+
+Over to you...
