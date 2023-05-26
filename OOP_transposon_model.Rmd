@@ -1,0 +1,590 @@
+---
+title: "Object-orientated programming of a transposon model"
+author: "Nicholas Croucher"
+date: "2023-05-25"
+output: html_document
+knit: (function(input, encoding) {
+    rmarkdown::render(
+      input = input,
+      encoding = encoding,
+      envir = globalenv()
+    )
+  })
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(magrittr)
+library(tidyverse)
+```
+
+## Object-orientated programming
+
+Traditional programming in R is **procedural**, i.e. a list of commands. This model will instead use **object-orientated programming* (OOP), in which we can define "objects" in code that correspond to biological entities. These objects are essentially containers that collect together:
+
+* **class** - the type of the object
+
+* **fields** - the data associated with the object (i.e., its properties)
+
+* **methods** - the functions associated with the object (i.e., what it can do)
+
+A description of the [principles of OOP](https://adv-r.hadley.nz/oo.html) has been written by Hadley Wickham, who created tidyverse.
+
+## Hierarchical model structure
+
+We will create a model with a hierarchy of objects:
+
+* **population** - this is a collection of bacteria "objects"
+
+* **bacterium** - this is a collection of locus "objects", with some other properties
+
+* **locus** - this is the building block of the simulations, and corresponds to a contiguous segment of DNA
+
+To build the model, we will define a locus object. These loci may, or may not, be transposons. We will then define a bacterium as an object, the genotype of which is a list of locus objects. The population will then be assembled as a list of objects. This enables us to then run simulations based on Wright-Fisher population genetics models.
+
+## Steps of the simulation
+
+As Wright-Fisher models are discrete generation models, we can define what happens at each timestep to understand what properties are needed in the objects that will comprise our model:
+
+* Select the bacteria that comprise the population
+  - This will be random in the first generation
+  - In subsequent generations, it will be randomly drawn from the previous generation
+  - In neutral models, all bacteria are equally likely to be an ancestor of a bacterium in the current generation
+  - In models including selection, the number of descendents of a bacterium will reflect its fitness (so these objects must include a **label** and a **fitness**, as well as a **genotype**)
+* Iterate over each bacterium in the population
+  - Iterate over each gene in the bacterium's genotype
+    + identify whether the gene is a transposon that will transpose (so these genes must include a property defining whether they are a **transposon**, and their corresponding **transposition rate**)
+  - Once the number and type of transposition events has been recorded, iterate over each event:
+    + Select the insertion site; as we will assume all sites are equally likely to be targeted, loci wil need a property defining their **length** (as longer loci are more likely to be targeted by insertions)
+    + A new copy of the transposon can be added at the insertion sites
+    + The locus into which it has inserted can be split into two, the lengths of which should sum to that of the original locus (as transposons are being copied, and insertion site loci being split, each locus will need a **label** and an **index**)
+    + If recombination features in the model, then it should exchange the sequence from a donor into a receipient at specific loci (so bacteria will need a **recombination rate**)
+    + The fitness effect of the disruption of a locus can be recorded (so each locus should be associated with a **fitness**)
+  - The new overall fitness of the bacterium can be calculated, ready for the selection of the next generation
+
+## Defining a locus object
+
+This means we can design an object that represents a DNA locus: a contiguous segment of DNA. There are three types relevant to the model:
+
+* **Gene** - a segment of DNA that encodes for a functional RNA. Genes will have an effect on the fitness of the cell when intact. They are non-transposable.
+
+* **Intergenic** - a segment of DNA between two genes. These can be assumed to be neutral (i.e., insertions at such sites have no impact on host cell fitness). They are non-transposable.
+
+* **Transposon** - a segment of DNA encoding for an insertion sequence. These can be assumed to be neutral or slightly deleterious. These are transposable.
+
+* **Pseudogene** - a fragment of a gene disrupted by insertion
+
+A transposon is a functional RNA from the gene-centric perspective, but perhaps not from the cellular perspective. [This paper](https://academic.oup.com/gbe/article/7/3/642/601636) describes the relevant terminology in detail.
+
+The object therefore needs the following properties:
+
+* **class**: locus
+
+* **fields**:
+  - **type**: whether the locus is a gene, pseudogene, transposon, or intergenic
+  - **label**: a name
+  - **index**: increment as copy number grows through transposition or fragmentation
+  - **length**: the length of the locus, which will need to change as fragmentation occurs
+  - **fitness**: contribution to fitness when locus is intact
+  - **disruption_cost**: contribution to fitness when locus is disrupted
+  - **transposition_rate**: per generation probability of a transposon transposing
+
+* **methods**:
+  - **transposition_event**: return a transposition event
+  - **split**: split a locus into which a transposon has inserted
+
+```{r Locus object, echo=TRUE}
+
+# Define a low-level constructor for a locus S3 object
+locus <- function(t,l,i,ll,f,d,tr) {
+  my_locus <- list(
+    type = t,
+    label = l,
+    index = i,
+    locus_length = ll,
+    fitness = f,
+    disruption_cost = d,
+    transposition_rate = tr
+  )
+  my_locus <- structure(my_locus,
+                        class = "locus")
+  return(my_locus)
+}
+
+# Define a validation function for a locus S3 object
+validate_locus <- function(my_locus) {
+  stopifnot(my_locus$type %in% c("gene","pseudogene","transposon","intergenic"))
+  stopifnot(is.character(my_locus$label))
+  stopifnot(is.integer(my_locus$index))
+  stopifnot(is.integer(my_locus$locus_length) & my_locus$locus_length > 0)
+  stopifnot(is.numeric(my_locus$fitness))
+  stopifnot(is.numeric(my_locus$disruption_cost))
+  stopifnot(is.numeric(my_locus$transposition_rate) & my_locus$transposition_rate >= 0)
+}
+
+# Define a more flexible constructor for a locus S3 object, with sensible defaults
+new_locus <- function(new_type = NULL,
+                      new_label = NULL,
+                      new_index = NULL,
+                      new_locus_length = NULL,
+                      new_fitness = NULL,
+                      new_disruption_cost = NULL,
+                      new_transposition_rate = NULL
+                      ) {
+  # Use input options, if provided; otherwise use sensible defaults
+  type = ifelse(is.null(new_type),
+                "gene",
+                new_type)
+  label = ifelse(is.null(new_label),
+                  paste0(sample(c(0:9, LETTERS[1:6]), 10, T), collapse = ''),
+                  new_label)
+  index = ifelse(is.null(new_index),
+                  as.integer(1),
+                  as.integer(new_index))
+  locus_length = ifelse(is.null(new_locus_length),
+                        ifelse(type != "intergenic",
+                               as.integer(900),
+                               as.integer(100)
+                              ),
+                        as.integer(new_locus_length))
+  fitness = ifelse(is.null(new_fitness),
+                    0,
+                    new_fitness)
+  disruption_cost = ifelse(is.null(new_disruption_cost),
+                            0,
+                            new_disruption_cost)
+  transposition_rate = ifelse(is.null(new_transposition_rate),
+                              0,
+                              new_transposition_rate)
+  # Construct the object with the input/default values
+  my_locus <- locus(type,
+                    label,
+                    index,
+                    locus_length,
+                    fitness,
+                    disruption_cost,
+                    transposition_rate)
+  # Check the object values make sense
+  validate_locus(my_locus)
+  # Return the object
+  return(my_locus)
+}
+
+# Define a print function for a locus S3 object
+print.locus <- function(my_locus) {
+  cat(
+    sprintf("Label: %s",my_locus$label),"\n",
+    sprintf("Index: %i",my_locus$index),"\n",
+    sprintf("Type: %s",my_locus$type),"\n",
+    sprintf("Length: %i",my_locus$locus_length),"\n",
+    sprintf("Fitness: %.3e",my_locus$fitness),"\n",
+    sprintf("Disruption cost: %.3e",my_locus$disruption_cost),"\n",
+    sprintf("Transposition rate: %.3e",my_locus$transposition_rate),"\n",
+    sep = ""
+  )
+}
+
+```
+
+To understand the default settings for a locus, we can construct a locus object with no inputs and print the returned object:
+
+``` {r Print a test gene}
+
+new_locus()
+
+```
+
+We can now add the gene-specific methods described above:
+
+``` {r Define the transposition event method}
+
+# Here, add a method that returns a list of transposon to insert into the genome
+transposons_to_insert <- function(my_locus) {
+  if (my_locus$type == "transposon" & my_locus$transposition_rate > 0) {
+    if (runif(1) < my_locus$transposition_rate) {
+      new_transposon = my_locus
+      return(new_transposon)
+    }
+  }
+}
+
+# Here, add a method for splitting a gene by insertion
+split_insertion_site <- function(my_locus,my_transposon) {
+  # Do not split genes that are <=5 bp in length to avoid infinite division of length
+  if (my_locus$locus_length > 5) {
+    insertion_point <- sample.int((my_locus$locus_length-2),1) + 1
+    # Upstream fragment
+    upstream_locus = my_locus
+    upstream_locus$type = ifelse(my_locus$type=="intergenic","intergenic","pseudogene")
+    upstream_locus$locus_length = insertion_point
+    upstream_locus$transposition_rate = 0.0 # disrupted transposons cannot transpose
+    # Downstream fragment
+    downstream_locus = my_locus
+    downstream_locus$type = ifelse(my_locus$type=="intergenic","intergenic","pseudogene")
+    downstream_locus$locus_length = my_locus$locus_length - insertion_point
+    downstream_locus$transposition_rate = 0.0 # disrupted transposons cannot transpose
+    downstream_locus$index = my_locus$index + 1
+    # Return fragments
+    return(list(upstream_locus,my_transposon,downstream_locus))
+  } else {
+    # Return fragments
+    return(list(my_locus,my_transposon))
+  }
+}
+
+```
+
+## Defining a bacterium object
+
+We now define a the object corresponding to a bacterium: in the case of pathogens, this will correspond to a clonally-related set of bacteria within a single host individual. The object therefore needs the following properties:
+
+* **class**: bacterium
+
+* **fields**:
+  - **label**: a unique label that allows the bacteria descended from the same original ancestor to be identified
+  - **strain**: a non-unique label that allows bacteria to be grouped together, to account for population structure
+  - **genotype**: a list of genes
+  - **fitness**: the fitness of the bacterium, determined by its genome
+  - **recombination_rate**: the rate of cell driven transformation
+
+* **methods**:
+  - **run_transposition**: transpose genes within the genotype
+  - **calculate_fitness**: calculate the fitness from the genotype
+
+```{r Bacterium object, echo=TRUE}
+
+# Define a low-level constructor for a locus S3 object
+bacterium <- function(l,s,g,f,r) {
+  my_bacterium <- list(
+    label = l,
+    strain = s,
+    genotype = g,
+    fitness = f,
+    recombination_rate = r
+  )
+  my_bacterium <- structure(my_bacterium,
+                        class = "bacterium")
+  return(my_bacterium)
+}
+
+# Define a validation function for a locus S3 object
+validate_bacterium <- function(my_bacterium) {
+  stopifnot(is.character(my_bacterium$label))
+  stopifnot(is.character(my_bacterium$strain))
+  stopifnot(is.list(my_bacterium$genotype) & length(my_bacterium$genotype) > 0)
+  stopifnot(is.numeric(my_bacterium$fitness))
+  stopifnot(is.numeric(my_bacterium$recombination_rate))
+}
+
+# Define a function for calculating fitness from the genotype
+calculate_fitness <- function(my_bacterium) {
+  current_fitness = 0
+  for (my_locus in my_bacterium$genotype) {
+    if (my_locus$type == "pseudogene") {
+      if (my_locus$index == 1) {
+        current_fitness = current_fitness - my_locus$disruption_cost # count disruption cost of pseudogenes
+      }
+    } else {
+      current_fitness = current_fitness + my_locus$fitness # count fitness benefit of intact genes
+    }
+  }
+  return(current_fitness)
+}
+
+# Define a more flexible constructor for a locus S3 object, with sensible defaults
+new_bacterium <- function(new_label = NULL,
+                          new_strain = NULL,
+                          new_genotype = NULL,
+                          new_fitness = NULL,
+                          new_recombination_rate = NULL,
+                          new_genotype_length = NULL,
+                          new_transposon_count = NULL,
+                          new_disruption_cost = NULL,
+                          new_transposition_rate = NULL
+                          ) {
+  # Provide some validation of input values
+  if (!is.null(new_genotype)) {
+    if (!is.null(new_transposon_count) |
+        !is.null(new_fitness) |
+        !is.null(new_disruption_cost) | 
+        !is.null(new_transposition_rate)) {
+      message("If a genotype is defined, other genotype settings will be ignored")
+    }
+  }
+  # Use input options, if provided; otherwise use sensible defaults
+  label = ifelse(is.null(new_label),
+                  paste0(sample(c(0:9, LETTERS[1:6]), 10, T), collapse = ''),
+                  new_label)
+  strain = ifelse(is.null(new_strain),
+                  paste0(sample(c(0:9, LETTERS[1:6]), 10, T), collapse = ''),
+                  as.integer(new_index))
+  recombination_rate = ifelse(is.null(new_recombination_rate),
+                              0,
+                              new_recombination_rate)
+  # Either assign the input genotype, or generate one using the input properties
+  genotype = list()
+  if (!is.null(new_genotype)) {
+    # Assign specified genotype and validate
+    genotype = new_genotype
+    lapply(genotype,validate_locus)
+  } else {
+    # Set up an alternating pattern of genes and intergenic regions
+    genotype_length = ifelse(is.null(new_genotype_length),
+                             100,
+                             new_genotype_length)
+    gene_types = rep(c("gene","intergenic"),
+                     times = floor(genotype_length/2))
+    if (length(gene_types) < genotype_length) {
+      gene_types <- c(gene_types,"gene")
+    }
+    # Replace some genes with transposons if specified
+    # Replace a gene, rather than an intergenic region, so use an odd number
+    transposon_count = ifelse(is.null(new_transposon_count),
+                             1,
+                             new_transposon_count)
+    if (transposon_count > 0) {
+      transposon_positions = sample(1:floor(genotype_length/2),
+                                    transposon_count,
+                                    replace = FALSE)
+      gene_types[transposon_positions*2-1] <- "transposon"
+    }
+    # Generate vectors of fitnesses, disruption costs and transposition rates
+    # Default fitness of each gene calculated to sum to one for individual
+    gene_fitness <- ifelse(is.null(new_fitness),1/sum(sapply(gene_types,function(x) x=="gene")),new_fitness)
+    fitnesses <- ifelse(gene_types=="gene",
+                        gene_fitness,
+                        0)
+    # Default is that there is no extra cost to disruption
+    gene_disruption <- ifelse(is.null(new_disruption_cost),0,new_disruption_cost)
+    disruption_costs <- ifelse(gene_types=="gene",
+                        gene_disruption,
+                        0)
+    # Default transposition rate is zero
+    transposition_rate <- ifelse(is.null(new_transposition_rate),0,new_transposition_rate)
+    transposition_rates <- ifelse(gene_types=="transposon",
+                                  transposition_rate,
+                                  0)
+    # Construct genotype
+    for (gene_index in 1:genotype_length) {
+      genotype[[gene_index]] <- new_locus(
+        new_type = gene_types[gene_index],
+        new_disruption_cost = disruption_costs[gene_index],
+        new_fitness = fitnesses[gene_index],
+        new_transposition_rate = transposition_rates[gene_index]
+      )
+    }
+  }
+  # Construct the object with the input/default values
+  fitness = 0
+  my_bacterium <- bacterium(label,
+                            strain,
+                            genotype,
+                            fitness,
+                            recombination_rate)
+  # Update fitness according to genotype
+  my_bacterium$fitness <- calculate_fitness(my_bacterium)
+  # Check the object values make sense
+  validate_bacterium(my_bacterium)
+  # Return the object
+  return(my_bacterium)
+}
+
+# Define a print function for a locus S3 object
+print.bacterium <- function(my_bacterium) {
+  cat(
+    sprintf("Label: %s",my_bacterium$label),"\n",
+    sprintf("Strain: %s",my_bacterium$strain),"\n",
+    sprintf("Fitness: %.3f",my_bacterium$fitness),"\n",
+    sprintf("Recombination rate: %.3f",my_bacterium$recombination_rate),"\n",
+    sprintf("Genotype length: %i",length(my_bacterium$genotype)),"\n",
+    sprintf("Gene count: %i",sum(sapply(my_bacterium$genotype,function(x) x[["type"]]=="gene"))),"\n",
+    sprintf("Transposon count: %i",sum(sapply(my_bacterium$genotype,function(x) x[["type"]]=="transposon"))),"\n",
+    sprintf("Pseudogene cost: %i",sum(sapply(my_bacterium$genotype,function(x) x[["type"]]=="pseudogene"))),"\n",
+    sep = ""
+  )
+}
+
+```
+
+To understand the default settings for a bacterium, we can construct a locus object with no inputs and print the returned object:
+
+``` {r Print a test bacterium}
+
+new_bacterium()
+
+```
+
+## Defining a population
+
+This is a simple example of a Wright-Fisher population, with no changes to individuals' genotypes. Sampling is weighted by isolates' fitness, enabling non-neutral population dynamics.
+
+``` {r Defining a population}
+
+population_size = 20
+number_of_generations = 50
+
+# Set up the first generation
+current_generation <- replicate(population_size, new_bacterium(), simplify=FALSE)
+
+# Data structure for next generation
+next_generation <- list()
+
+# Iterate through generations
+for (generation in 1:number_of_generations) {
+  # Get fitnesses of isolates in current generation
+  current_generation_fitness <- unlist(lapply(current_generation, function(x) x[["fitness"]]))
+  # Choose the ancestors from the current population
+  next_generation_indices <- sample(1:population_size,
+                                      population_size,
+                                      replace=TRUE,
+                                      prob = current_generation_fitness)
+  # Populate the next generation with descendents of these ancestors
+  next_generation <- current_generation[next_generation_indices]
+  # Transfer the next generation into the current generation
+  current_generation <- next_generation
+}
+
+```
+
+## Run a test including transposition
+
+``` {r Defining a population with transposition}
+
+population_size = 20
+number_of_generations = 50
+
+# Set up the first generation
+starting_population <- replicate(population_size, new_bacterium(new_transposition_rate = 0.05,
+                                                               new_transposon_count = 5,
+                                                               new_genotype_length = 50),
+                                simplify=FALSE)
+current_generation <- starting_population
+
+# Data structure for next generation
+next_generation <- list()
+
+# Iterate through generations
+for (generation in 1:number_of_generations) {
+  # Get fitnesses of isolates in current generation
+  current_generation_fitness <- unlist(lapply(current_generation, function(x) x[["fitness"]]))
+  # Choose the ancestors from the current population
+  next_generation_indices <- sample(1:population_size,
+                                      population_size,
+                                      replace=TRUE,
+                                      prob = current_generation_fitness)
+  # Populate the next generation with descendants of these ancestors
+  next_generation <- current_generation[next_generation_indices]
+  # Iterate over bacteria in the next generation and implement transpositions
+  for (bacterium_index in 1:length(next_generation)) {
+    # Get bacterium object
+    this_bacterium <- next_generation[[bacterium_index]]
+    # Identify transposition events
+    transposition_events <- lapply(this_bacterium$genotype,transposons_to_insert)
+    transposition_events <- transposition_events[!sapply(transposition_events,is.null)]
+    # Alter genotypes if transposition events occurred
+    if (length(transposition_events) > 0) {
+      # Get locus lengths
+      all_locus_lengths <- unlist(lapply(this_bacterium$genotype, function(x) x[["locus_length"]]))
+      # Identify insertion sites, selected weighted by locus lengths
+      insertion_sites <- sample.int(length(this_bacterium$genotype),
+                                    size = length(transposition_events),
+                                    replace = FALSE,
+                                    prob = all_locus_lengths)
+      # Get disrupted loci
+      split_insertion_sites <- list()
+      for (i in 1:length(insertion_sites)) {
+        split_insertion_sites[[i]] <- split_insertion_site(this_bacterium$genotype[[insertion_sites[i]]],
+                                                           transposition_events[[i]])
+      }
+      # Alter the genotype - reorder the events by position
+      split_insertion_sites <- split_insertion_sites[order(insertion_sites)]
+      insertion_sites <- insertion_sites[order(insertion_sites)]
+      mutated_genotype <- list()
+      last_position <- 1
+      for (i in 1:length(insertion_sites)) {
+        if (insertion_sites[i] > 1) {
+          mutated_genotype <- c(mutated_genotype,
+                                   this_bacterium$genotype[last_position:(insertion_sites[i]-1)])
+        }
+        mutated_genotype <- c(mutated_genotype,
+                                   split_insertion_sites[[i]])
+        last_position <- insertion_sites[i]+1
+      }
+      if (last_position < length(this_bacterium$genotype)) {
+        mutated_genotype <- c(mutated_genotype,
+                                   this_bacterium$genotype[last_position:length(this_bacterium$genotype)])
+      }
+      # Re-calculate the fitness
+      this_bacterium$genotype <- mutated_genotype
+      this_bacterium$fitness <- calculate_fitness(this_bacterium)
+      # Replace bacterium object
+      next_generation[[bacterium_index]] <- this_bacterium
+    }
+  }
+  # Transfer the next generation into the current generation
+  current_generation <- next_generation
+}
+
+```
+
+To validate the mutational processes are operating as expected, we should check that no sequence is lost as genes are divided by transposon insertions:
+
+``` {r Validate population statistics}
+
+# Sum up the lengths of loci of a specified type
+sum_locus_lengths <- function(my_genotype,my_type) {
+  sum(unlist(lapply(my_genotype, function(x) if (x[["type"]]==my_type) {x[["locus_length"]]})))
+}
+
+# Sum up the count of loci of a specified type
+count_loci <- function(my_genotype,my_type) {
+  sum(unlist(lapply(my_genotype, function(x) x[["type"]]==my_type)))
+}
+
+calculate_population_sequence_composition <- function(my_population) {
+  
+  # data structures
+  population_size <- length(my_population)
+  pop_info.df <- data.frame(
+    "bacterium_labels" = rep(NA_character_,population_size),
+    "gene_count" = rep(NA_integer_,population_size),
+    "gene_length" = rep(NA_integer_,population_size),
+    "transposon_count" = rep(NA_integer_,population_size),
+    "transposon_length" = rep(NA_integer_,population_size),
+    "pseudogene_count" = rep(NA_integer_,population_size),
+    "pseudogene_length" = rep(NA_integer_,population_size),
+    "intergenic_count" = rep(NA_integer_,population_size),
+    "intergenic_length" = rep(NA_integer_,population_size)
+  )
+  
+  for (bacterium_index in 1:population_size) {
+    my_bacterium <- my_population[[bacterium_index]]
+    pop_info.df$bacterium_labels[[bacterium_index]] <- my_bacterium$label
+    pop_info.df$gene_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"gene")
+    pop_info.df$gene_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"gene")
+    pop_info.df$transposon_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"transposon")
+    pop_info.df$transposon_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"transposon")
+    pop_info.df$pseudogene_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"pseudogene")
+    pop_info.df$pseudogene_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"pseudogene")
+    pop_info.df$intergenic_count[[bacterium_index]] <- count_loci(this_bacterium$genotype,"intergenic")
+    pop_info.df$intergenic_length[[bacterium_index]] <- sum_locus_lengths(this_bacterium$genotype,"intergenic")
+  }
+  
+  print(pop_info.df)
+  
+}
+
+```
+
+``` {r Starting population statistics}
+
+calculate_population_sequence_composition(starting_population)
+
+```
+
+``` {r Final population statistics}
+
+calculate_population_sequence_composition(current_generation)
+
+```
+
