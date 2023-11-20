@@ -106,7 +106,7 @@ locus <- function(t,l,i,ll,f,d,tr) {
     disruption_cost = d,
     transposition_rate = tr
   )
-  my_locus <- structure(my_locus,
+  my_locus <- base::structure(my_locus,
                         class = "locus")
   return(my_locus)
 }
@@ -262,7 +262,7 @@ bacterium <- function(l,s,g,f,r) {
     fitness = f,
     recombination_rate = r
   )
-  my_bacterium <- structure(my_bacterium,
+  my_bacterium <- base::structure(my_bacterium,
                         class = "bacterium")
   return(my_bacterium)
 }
@@ -512,7 +512,7 @@ for (generation in 1:number_of_generations) {
                                    split_insertion_sites[[i]])
         last_position <- insertion_sites[i]+1
       }
-      if (last_position < length(this_bacterium$genotype)) {
+      if (last_position <= length(this_bacterium$genotype)) {
         mutated_genotype <- c(mutated_genotype,
                                    this_bacterium$genotype[last_position:length(this_bacterium$genotype)])
       }
@@ -599,3 +599,18 @@ Note that all the final population have the same label, meaning that drift has e
 ## Analysis to run
 
 Over to you...
+
+## Defining fitness variation
+
+``` {r Defining differences in fitness}
+
+genotype_length <- 100
+v_genotype <- replicate(genotype_length,new_locus(),simplify = FALSE)
+fitness_distribution <- rlnorm(genotype_length,meanlog = 1,sdlog = 1)
+for (i in 1:genotype_length) {
+  v_genotype[[i]]$fitness<-fitness_distribution[i]
+}
+current_generation <- replicate(population_size, new_bacterium(new_genotype = v_genotype), simplify=FALSE)
+
+binary_fitness <- rbinom(genotype_length,1,p = 0.16)
+```
