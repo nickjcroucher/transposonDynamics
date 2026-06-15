@@ -1,0 +1,10 @@
+*~
+._*
+p_*
+*.sw*
+data
+raw
+res
+.Rhistory
+*.pyc
+*.html
