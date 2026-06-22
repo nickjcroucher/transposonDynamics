@@ -1,0 +1,8 @@
+Type,Value
+ref genome,GCA_001457635.1
+transposon size in bp,30
+transposon excise prob mean,.3
+transposon excise prob distribution,uniform
+transposon excise hypothesis,red_queen
+gene recombination prob mean,.3
+gene recombination prob distribution,normal

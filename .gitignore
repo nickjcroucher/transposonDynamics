@@ -4,7 +4,6 @@ p_*
 *.sw*
 logs
 data
-raw
 res
 .Rhistory
 *.pyc
