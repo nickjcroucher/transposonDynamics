@@ -58,9 +58,9 @@ jobs:
 
       - name: Sign the published Docker image
         env:
-	  COSIGN_EXPERIMENTAL: false
-	  COSIGN_KEY: ${{ secrets.SIGNING_SECRET }}
-	run: cosign sign --key env://COSIGN_KEY ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}@${{ steps.push.outputs.digest }}
+          COSIGN_EXPERIMENTAL: false
+          COSIGN_KEY: ${{ secrets.SIGNING_SECRET }}
+        run: cosign sign --key env://COSIGN_KEY ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}@${{ steps.push.outputs.digest }}
       
       # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see "[AUTOTITLE](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)." 
       - name: Generate artifact attestation
