@@ -12,4 +12,4 @@ for(i in iNstall){
 for(i in pKgs){library(i, character.only = T)};rm(i, pKgs)
 
 ##### base sequence download #####
-dNa = read.table(argv[1])
+#dNa = read.table(argv[1])
