@@ -62,7 +62,9 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
         run: |
-          echo "${TAGS}" | xargs -I {} sh -c 'echo "${{ secrets.SIGNING_SECRET }}" | cosign sign --yes --key - {}@${DIGEST}'
+          KEY_CONTENT="${{ secrets.SIGNING_SECRET }}"
+          KEY_CONTENT=$(echo "$KEY_CONTENT" | sed 's/\\n/\n/g')
+          echo "$KEY_CONTENT" | cosign sign --yes --key - $(echo "${TAGS}" | head -1)@${DIGEST}
       
       # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see "[AUTOTITLE](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)." 
       - name: Generate artifact attestation
