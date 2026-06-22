@@ -59,7 +59,6 @@ jobs:
       - name: Sign the published Docker image
         env:
           COSIGN_EXPERIMENTAL: false
-          COSIGN_KEY: ${{ secrets.SIGNING_SECRET }}
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
         run: |
