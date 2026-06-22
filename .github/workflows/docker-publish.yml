@@ -61,7 +61,7 @@ jobs:
           COSIGN_EXPERIMENTAL: false
           COSIGN_PASSWORD: ""
           TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           echo "${{ secrets.SIGNING_SECRET }}" > .cosign/cosign.key
           echo "${TAGS}" | xargs -I {} cosign sign --yes --key .cosign/cosign.key {}@${DIGEST}
