@@ -60,11 +60,8 @@ jobs:
         env:
           COSIGN_KEY: ${{ secrets.SIGNING_SECRET }}
         run: |
-          echo "${COSIGN_KEY}" > ./cosign.key
-          ls -la ./cosign.key
-          file ./cosign.key
-          wc -l ./cosign.key
-          head -c 50 ./cosign.key
+          cosign version
+          cosign key public --key ./cosign.key
 
       - name: Sign the published Docker image
         env:
@@ -73,8 +70,8 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
         run: |
-          echo "${{ secrets.SIGNING_SECRET }}" > ./cosignphu.key
-          echo "${TAGS}" | xargs -I {} cosign sign --yes --key ./cosignphu.key {}@${DIGEST}
+          echo "${{ secrets.SIGNING_SECRET }}" > ./cosign.key
+          echo "${TAGS}" | xargs -I {} cosign sign --yes --key ./cosign.key {}@${DIGEST}
       
       # This step generates an artifact attestation for the image, which is an unforgeable statement about where and how it was built. It increases supply chain security for people who consume the image. For more information, see "[AUTOTITLE](/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)." 
       - name: Generate artifact attestation
