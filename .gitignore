@@ -2,6 +2,7 @@
 ._*
 p_*
 *.sw*
+logs
 data
 raw
 res
