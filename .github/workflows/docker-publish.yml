@@ -56,13 +56,6 @@ jobs:
       - name: Sign Image with cosign
         uses: sigstore/cosign-installer@v3
 
-      - name: Diagnose key file
-        env:
-          COSIGN_KEY: ${{ secrets.SIGNING_SECRET }}
-        run: |
-          cosign version
-          cosign key public --key ./cosign.key
-
       - name: Sign the published Docker image
         env:
           COSIGN_EXPERIMENTAL: false
