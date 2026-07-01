@@ -1,0 +1,48 @@
+name: R unit tests
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/func.r"
+      - "src/test_func.R"
+      - "raw/**"
+      - "data/**"
+      - ".github/workflows/test-func.yml"
+  pull_request:
+    paths:
+      - "src/func.r"
+      - "src/test_func.R"
+      - "raw/**"
+      - "data/**"
+      - ".github/workflows/test-func.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-func:
+    runs-on: ubuntu-latest
+    env:
+      FUNC_R_PATH: ${{ github.workspace }}/src/func.r
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "release"
+          use-public-rspm: true
+
+      - name: Install R test dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::testthat
+            any::sessioninfo
+
+      - name: Run func.r unit tests
+        run: Rscript src/test_func.R
