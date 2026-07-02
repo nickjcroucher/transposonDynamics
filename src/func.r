@@ -230,7 +230,7 @@ g.Recom = function(res.pool, gene.df, recomRate){
       x.receipt = gene.recom(h1.G = res.pool$host[i], h1.t = res.pool$transposon[i], h2.G = res.pool$host[x.recom$host[i0]], h2.t = res.pool$transposon[x.recom$host[i0]], g2to1 = x.recom$gene[i0], locusTags = gene.df$locus_tag)
       res.pool$host[i] = x.receipt[1]
       res.pool$transposon[i] = sub(";$","",sub("^;","",x.receipt[2]))
-    };rm(i0, x.receipt)
-  }};rm(i, x.recom)
+    };rm(i0, x.receipt, x.recom)
+  }};rm(i)
   return(res.pool)
 }

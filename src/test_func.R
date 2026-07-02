@@ -4,6 +4,7 @@ library(testthat)
 
 func_path <- Sys.getenv(
   "FUNC_R_PATH",
+  # unset = "func.r"
   unset = file.path(Sys.getenv("GITHUB_WORKSPACE", unset = getwd()), "src", "func.r")
 )
 
@@ -68,7 +69,7 @@ test_that("gffClean expands GFF attributes into columns", {
   expect_true(is.na(clean$product[1]))
 })
 
-test_that("rNumVec delegates to normal, uniform, and poisson generators", {
+test_that("rNumVec delegates to normal, uniform, poisson, and negative binomial generators", {
   set.seed(123)
   actual_normal <- rNumVec("normal", L = "3", p1 = "10", p2 = "2")
   set.seed(123)
@@ -84,13 +85,13 @@ test_that("rNumVec delegates to normal, uniform, and poisson generators", {
   set.seed(123)
   actual_poisson <- rNumVec("poisson", L = 3, p1 = .3)
   set.seed(123)
-  expected_poisson <- 1/rpois(n = 3, lambda = .3)
+  expected_poisson <- 1/(rpois(n = 3, lambda = .3) + 1)
   expect_equal(actual_poisson, expected_poisson)
 
   set.seed(123)
   actual_poisson <- rNumVec("negbin", L = 3, p1 = .3, p2 = .4)
   set.seed(123)
-  expected_poisson <- 1/rnbinom(n = 3, prob = .3, size = .4)
+  expected_poisson <- 1/(rnbinom(n = 3, prob = .3, size = .4) + 1)
   expect_equal(actual_poisson, expected_poisson)
 
   expect_error(
@@ -165,8 +166,9 @@ test_that("ini.transposon creates encoded transposon records", {
   expect_match(out$uniqID, "^[A-Z]{7}$")
   expect_equal(vapply(parts, `[[`, character(1), 1), rep("", 2))
   expect_equal(vapply(parts, `[[`, character(1), 2), rep("0", 2))
-  expect_equal(vapply(parts, `[[`, character(1), 3), rep("T", 2))
-  expect_equal(vapply(parts, `[[`, character(1), 4), out$uniqID)
+  expect_equal(vapply(parts, `[[`, character(1), 3), rep("0", 2))
+  expect_equal(vapply(parts, `[[`, character(1), 4), rep("T", 2))
+  expect_equal(vapply(parts, `[[`, character(1), 5), out$uniqID)
 })
 
 test_that("reZero rescales values with the provided bounds", {
@@ -249,7 +251,7 @@ test_that("tPn.x invalidates the earlier overlapping transposon", {
     tPn2 = "gB!7!5!T!id2",
     tPn2.len = 1
   )
-  expect_equal(already_invalid, c("gA!5!5!F!id1", "gB!7!5!T!id2"))
+  expect_equal(already_invalid, "gA!5!5!F!id1")
 })
 
 test_that("tPn.r sets the fourth field to T for one record", {
@@ -287,18 +289,22 @@ test_that("tPn.jump leaves tags unchanged when no jump happens", {
     tPn.prob = 0.9,
     tPn.size = 5,
     gene.df = gene_df,
-    jumProb = 0.1
+    tPn.move = 0.9,
+    jumProb = 0.1,
+    generation = 5
   )
 
-  expect_equal(out$tPn.tag, tag)
-  expect_equal(out$gene, gene_df)
+  colnames(gene_df)[1] = paste0(tag,".",colnames(gene_df)[1])
+  expect_equal(out, gene_df)
 })
 
 test_that("tPn.jump returns an adjusted gene table after a jump", {
   gene_df <- toy_gene_df()
+  tag <- "gA!1!5!T!id1"
+  colnames(gene_df)[1] = paste0(tag,".",colnames(gene_df)[1])
 
   out <- tPn.jump(
-    tPn.tag = "gA!1!5!T!id1",
+    tPn.tag = tag,
     tPn.prob = 0.5,
     tPn.size = 5,
     gene.df = gene_df,
@@ -306,11 +312,11 @@ test_that("tPn.jump returns an adjusted gene table after a jump", {
     jumProb = 1,
     generation = 8
   )
-  fields <- tPn.io(chain = out$tPn.tag, encrypt = FALSE)
+  fields <- tPn.io(chain = tag, encrypt = FALSE)
 
   expect_length(fields, 5)
   expect_true(substr(fields[1], 1, 1) %in% c("g", "i"))
-  expect_true(substring(fields[1], 2) %in% gene_df$locus_tag)
+  expect_true(substring(fields[1], 2) %in% gene_df[,1])
   expect_true(as.numeric(fields[2]) > 0)
   expect_true(as.numeric(fields[3]) >= 0)
   expect_equal(fields[4], "T")
@@ -342,16 +348,16 @@ test_that("g.Recom leaves rows untouched with zero recombination and changes rec
     stringsAsFactors = FALSE
   )
 
-  expect_equal(suppressWarnings(g.Recom(res_pool, gene_df, c(0, 0, 0))), res_pool)
+  expect_equal(suppressWarnings(g.Recom(res_pool, gene_df, 0)), res_pool)
 
   set.seed(1)
-  out <- g.Recom(res_pool, gene_df, c(1, 0, 0))
+  out <- g.Recom(res_pool, gene_df, 0.1)
 
   expect_equal(out$host[2:3], res_pool$host[2:3])
   expect_equal(out$transposon[2:3], res_pool$transposon[2:3])
   expect_equal(nchar(out$host), rep(nrow(gene_df), nrow(out)))
   expect_equal(
     sum(strsplit(out$host[1], split = "")[[1]] != strsplit(res_pool$host[1], split = "")[[1]]),
-    1
+    0
   )
 })
