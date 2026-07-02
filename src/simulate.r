@@ -64,7 +64,7 @@ gEn = 0; repeat{
   rec.offspring[gEn + 1,] = sim.df$familyTree
 
   gEn = gEn + 1; if(gEn > gEn.max){ break } # simulation done
-  cat(date(),": generation",gEn,"\n")
+#  cat(date(),": generation",gEn,"\n")
 
   ## Population reproduction stage
   sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, transposon.size = inFile$params$Value[inFile$params$Type=="transposon size in bp"])
