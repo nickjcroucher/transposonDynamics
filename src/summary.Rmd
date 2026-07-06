@@ -1,0 +1,93 @@
+---
+title: "Transposon Dynamics"
+author: "ph-u"
+date: "20260611, 20260703"
+output: html_document
+---
+
+# Transposon dynamics
+
+```{r echo=FALSE, message=FALSE}
+source("func_analysis.r")
+a = read.csv("../data/tpn_dyn.csv", header = T)
+cBar = c("#ffffffff", "#ff00ffff")
+```
+
+## Host genome (_Streptococcus pneumoniae_ D39) genealogy traces
+```{r echo=FALSE, message=FALSE}
+ggtern(data = a, mapping = aes(x = g1, y = g2, z = g3, colour = name)) +
+  geom_point() + # cBp[1:length(which(regexpr("^g[0123456789]", colnames(a))==1))]
+#  geom_text(aes(x = rep(100, nrow(a)), y = rep(100, nrow(a)), z = rep(100, nrow(a)), label = paste0("Generation ", generation)), inherit.aes = F) +
+  theme_bw() +
+  scale_color_manual(values = setNames(cBl[1:length(unique(a$name))], unique(a$name))) #+
+  # transition_states(generation, transition_length = 2, state_length = 1) +
+  # enter_fade() + 
+  # exit_shrink() +
+  # ease_aes('sine-in-out')
+```
+
+## Transposon population titre
+
+Transposon bursts was observed only on gene recombination rate 1e-4. Transposon titres were observed in steady states from approximately generation 30 onwards.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = a) +
+  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = log10(titre))) +
+  labs(x = "log10( Transposon excise rate )", y = "log10( Base gene recombination rate )") +
+  geom_text(aes(x = max(log10(jump.rate)), y = max(log10(recombine.rate)), label = paste0("Generation ", generation))) +
+  scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
+  theme_bw() +
+  transition_states(generation, transition_length = 2, state_length = 1) +
+  enter_fade() + 
+  exit_shrink() +
+  ease_aes('sine-in-out')
+```
+
+For base gene recombination rate = 1e-4,
+```{r echo=FALSE, message=FALSE}
+a.high = a[which(a[,2]==1e-4),]
+a.titre = as.data.frame(matrix(nrow = max(a$generation)+1, ncol = length(summary(0))))
+colnames(a.titre) = names(summary(0))
+
+a.gen = unique(a$generation)
+for(i in 1:length(a.gen)){a.titre[i,] = summary(a.high$titre[a.high$generation==a.gen[i]])};rm(i)
+matplot(a.gen, a.titre, type = "b", lty = 1, col = cBp, xlab = "Generation", ylab = "Transposon titre")
+```
+
+## Transposon Shannon diversity
+
+Increases in Shannon diversity denote rise in transposon titre variation among the host population. Within 100 generations, changes in gene recombination rate, but not transposon excise rate, dominate the distribution of transposons across the population of bacteria. Transposon titre varied the most across the host population. Base gene recombination rate, which is modified by the number of transposons in each genome, eliminated all transposons within its titre for rates higher than 1e-2. (The same graph is plotted with Inverse Simpsons)
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = a) +
+  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = shannon)) +
+  labs(x = "log10( Transposon excise rate )", y = "log10( Base gene recombination rate )") +
+  geom_text(aes(x = max(log10(jump.rate)), y = max(log10(recombine.rate)), label = paste0("Generation ", generation))) +
+  scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
+  theme_bw() +
+  transition_states(generation, transition_length = 2, state_length = 1) +
+  enter_fade() + 
+  exit_shrink() +
+  ease_aes('sine-in-out')
+```
+
+## Transposon Chao1 species richness
+
+Big variations on transposons titre was observed on gene recombination rate 1e-3. Variations on the transposon titre was not observed lower than gene recombination rate 1e-4.
+
+```{r echo=FALSE, message=FALSE}
+ggplot(data = a) +
+  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = log10(chao1))) +
+  labs(x = "log10( Transposon excise rate )", y = "log10( Base gene recombination rate )") +
+  geom_text(aes(x = max(log10(jump.rate)), y = max(log10(recombine.rate)), label = paste0("Generation ", generation))) +
+  scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
+  theme_bw() +
+  transition_states(generation, transition_length = 2, state_length = 1) +
+  enter_fade() + 
+  exit_shrink() +
+  ease_aes('sine-in-out')
+```
+
+# Resource
+https://www.dataquest.io/blog/r-markdown-guide-cheatsheet/
+https://biostatsquid.com/alpha-diversity-metrics/

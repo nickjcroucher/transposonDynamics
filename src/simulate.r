@@ -8,17 +8,17 @@
 # date: 20260623
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "7")}
 
 ##### env set #####
-cat(date(),": set environment\n")
+cat(date(),": set environment",argv[3],"-",argv[5],"\n")
 source("func.r")
 set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
 sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
 
 ##### Initiate populations #####
-cat(date(),": initiate population\n")
+cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
 hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
 tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
 
@@ -56,7 +56,7 @@ for(i in 1:nrow(sim.df)){
 };rm(i, tPn.loc)
 
 ##### Wright-Fisher / Neutral model run #####
-cat(date(),": run simulation\n")
+cat(date(),": run simulation",argv[3],"-",argv[5],"\n")
 gEn = 0; repeat{
   ## Population dynamics snapshot
   rec.host[gEn + 1,] = sim.df$host
@@ -106,7 +106,7 @@ gEn = 0; repeat{
         )
         tPn.list[[i]][i1] = strsplit(colnames(g.tmp)[1], "[.]")[[1]][1]
         colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], "[.]")[[1]][2]
-      }
+      };rm(i0,i1)
 
   ### 4. Validate each transposon
       tPn.list[[i]] = tPn.r(tPn.list[[i]])
@@ -117,10 +117,10 @@ gEn = 0; repeat{
           tPn2 = tPn.list[[i]][i2],
           tPn2.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
           )
-      }}}
+      }};rm(i1,i2)}
       sim.df$transposon[i] = paste0(tPn.list[[i]], collapse = ";")
     }
-  };rm(i, i0, i1)
+  };rm(i)
 
   ## Gene recombination stage (assume no transposons excise / add complications)
   sim.df = g.Recom(
@@ -131,7 +131,10 @@ gEn = 0; repeat{
 
 }
 
+cat(date(),": printing warnings",argv[3],"-",argv[5],"\n")
+print(warnings())
+
 ##### Simulation record export #####
-cat(date(),": result export\n")
+cat(date(),": result export",argv[3],"-",argv[5],"\n")
 save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
-cat(date(),": simulation completed\n")
+cat(date(),": simulation completed",argv[3],"-",argv[5],"\n")

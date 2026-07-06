@@ -8,7 +8,7 @@
 # date: 20260623
 
 ##### Constants #####
-# write.csv(data.frame(transposon = rep(10^-(2:7), each = 6), gene = rep(10^-(2:7), 6)), "../raw/scenario.csv", row.names = F, quote = F)
+# write.csv(data.frame(transposon = rep(10^-(0:5), each = 6), gene = rep(10^-(0:5), 6)), "../raw/scenario.csv", row.names = F, quote = F)
 gVar = c(letters,LETTERS,0:9) # notations for genome variation
 
 ##### Reorganize GFF file information #####
@@ -47,8 +47,8 @@ inParams = function(pArams = "../raw/input.csv"){
   x = which(gEne$interLength<0)
   gEne$length[x-1] = gEne$length[x-1] + gEne$interLength[x]
   gEne$interLength[x] = 0
-  gEne$essential = F ## + essential genes
-  gEne$recombination = F ## + recombination mechanism
+  gEne$essential = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="essential genes"], ";")[[1]] ## essential genes
+  gEne$recombination = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="genes for recombination mechanism"], ";")[[1]] ## recombination mechanism
   gEnome = as.numeric(unname(gFf[gFf$type=="region", c("start", "end")]))
   gEnome = gEnome[order(gEnome)]
 
@@ -73,7 +73,7 @@ ini.host = function(host.var, gene.df, gene.var){
     }else{
       stop(paste0("Either one variation or specify variations for each gene in the genome. You only provided ",length(gene.var), " gene variation notations, your gff file has ",nrow(gene.df), " genes."))
     }
-  }
+  }else if(length(gene.var)==1){gene.var = rep(gene.var, nrow(gene.df))}
   hOst = matrix(NA,nrow = as.numeric(host.var), ncol = nrow(gene.df))
     for(i in 1:ncol(hOst)){ hOst[,i] = sample(gVar[1:gene.var[i]], size = host.var, replace = T)};rm(i)
   hOst.compact = apply(hOst, 1, function(x){paste0(x, collapse = "")})
@@ -104,7 +104,9 @@ reGeneDF = function(tPn, tPn.size, gene.df){
       i1 = which(gene.df$locus_tag == substr(i0[1],2,nchar(i0[1])))
       if(substr(i0[1],1,1) == "g"){
         gene.df$length[i1] = gene.df$length[i1] + tPn.size
-        gene.df$start[(i1+1):nrow(gene.df)] = gene.df$start[(i1+1):nrow(gene.df)] + tPn.size
+        if(i1<nrow(gene.df)){
+          gene.df$start[(i1+1):nrow(gene.df)] = gene.df$start[(i1+1):nrow(gene.df)] + tPn.size
+        }
       }else{
         gene.df$interLength[i1] = gene.df$interLength[i1] + tPn.size
         gene.df$start[i1:nrow(gene.df)] = gene.df$start[i1:nrow(gene.df)] + tPn.size
@@ -172,10 +174,9 @@ tPn.r = function(tPn){
 ##### Single transposon jump #####
 tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, jumProb = 0, generation = 1){
   if(length(grep(".", colnames(gene.df)[1], fixed = T))>0){colnames(gene.df)[1] = strsplit(colnames(gene.df)[1], "[.]")[[1]][2]} # clear previous tPn.tag
-  if(tPn.move < jumProb){ # Determine location of jump
-    tPn.prob = reZero(tPn.prob, new1 = jumProb)
+  if(strsplit(tPn.tag, "!")[[1]][4]=="T" && tPn.move < jumProb){ # Jump?
     gene.df$cumsum = cumsum(gene.df$interLength + gene.df$length)/sum(gene.df$interLength + gene.df$length) - tPn.prob
-    x = which(gene.df$cumsum > 0)[1] # the intergenic-genic block that hosts the transposon
+    x = which(gene.df$cumsum >= 0)[1] # the intergenic-genic block that hosts the transposon
     if(x>1){
       tPn.loc = reZero(0, new0 = gene.df$cumsum[x-1], new1 = gene.df$cumsum[x])
     }else{
@@ -183,7 +184,6 @@ tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, jumProb 
     }
     tPn.loc = ceiling(tPn.loc * (gene.df$interLength[x] + gene.df$length[x])) - gene.df$interLength[x]
     if(tPn.loc < 0){ tPn.cds = F; tPn.loc = tPn.loc + gene.df$interLength[x] }else{ tPn.cds = T }
-
     tPn.old = tPn.io(chain = tPn.tag, encrypt = F)
     tPn.tag = tPn.io(gene = paste0(ifelse(tPn.cds, "g", "i"), gene.df$locus_tag[x]), location = tPn.loc, generation = generation, valid = "T", uniqID = tPn.old[5])
 
@@ -221,7 +221,13 @@ gene.recom = function(h1.G, h1.t, h2.G, h2.t, g2to1, locusTags){
 g.Recom = function(res.pool, gene.df, recomRate){
   # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
   numGenes = floor(lengths(strsplit(res.pool$transposon, ";")) * as.numeric(recomRate) * nrow(gene.df)) # gene recombination rate has a linear increase according to the number of transposons in the genome
-  numGenes[numGenes > (nrow(gene.df)-1)] = nrow(gene.df)-1
+
+  ## If any gene in recombination mechanism is hit by transposon, no recombination
+  if(sum(gene.df$recombination)>0){ for(i in which(gene.df$recombination)){
+    numGenes[grep(gene.df$locus_tag[i], res.pool$transposon)] = 0
+  };rm(i)}
+  numGenes[numGenes > (nrow(gene.df)-1)] = nrow(gene.df)-1 # random selection of genes can't exceed total number of genes in genome
+
   for(i in 1:nrow(res.pool)){ if(numGenes[i] > 0){
     x.recom = data.frame(
       gene = sample(c(1:nrow(gene.df))[-i], numGenes[i], replace = F), # which gene being recombined

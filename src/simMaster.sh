@@ -4,6 +4,9 @@
 # desc: run simulation
 # in: bash simMaster.sh [../raw/input.csv] [../raw/hpcTag.csv] [../raw/seed.csv] [../raw/scenario.csv] [hpcTag line number]
 
+# for i in `seq 1 36`;do bash simMaster.sh ../raw/input.csv ../raw/hpcTag.csv ../raw/seed.csv ../raw/scenario.csv ${i} > ${i}.e.txt & done
+# for i in `ls *.e.*`;do [[ `grep -e "warnings" ${i}` ]] && echo -e "${i}";done
+
 [[ -z $5 ]] && echo -e "Need 5 inputs\n`head -n 5 $0 | tail -n 1`" && exit
 
 inpCSV=$1
