@@ -9,5 +9,3 @@ res
 *.pyc
 *.html
 *.fast*
-ncbi_datase*
-*.tsv
