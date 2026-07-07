@@ -237,11 +237,11 @@ test_that("tPn.io converts between fields and encoded chains", {
   )
 })
 
-test_that("tPn.x invalidates the earlier overlapping transposon", {
+test_that("tPn.x invalidates the earlier overlapping transposon on the same gene", {
   overlap <- tPn.x(
     tPn1 = "gA!5!5!T!id1!0.2",
     tPn1.len = 3,
-    tPn2 = "gB!7!5!T!id2!0.3",
+    tPn2 = "gA!7!5!T!id2!0.3",
     tPn2.len = 1
   )
   expect_equal(overlap, "gA!5!5!F!id1!0.2")
@@ -249,7 +249,7 @@ test_that("tPn.x invalidates the earlier overlapping transposon", {
   no_overlap <- tPn.x(
     tPn1 = "gA!5!5!T!id1!0.2",
     tPn1.len = 3,
-    tPn2 = "gB!9!5!T!id2!0.3",
+    tPn2 = "gA!9!5!T!id2!0.3",
     tPn2.len = 1
   )
   expect_equal(no_overlap, "gA!5!5!T!id1!0.2")
@@ -257,10 +257,20 @@ test_that("tPn.x invalidates the earlier overlapping transposon", {
   already_invalid <- tPn.x(
     tPn1 = "gA!5!5!F!id1!0.2",
     tPn1.len = 3,
-    tPn2 = "gB!7!5!T!id2!0.3",
+    tPn2 = "gA!7!5!T!id2!0.3",
     tPn2.len = 1
   )
   expect_equal(already_invalid, "gA!5!5!F!id1!0.2")
+})
+
+test_that("tPn.x never flags an overlap across different genes, even with matching spans", {
+  different_gene <- tPn.x(
+    tPn1 = "gA!5!5!T!id1!0.2",
+    tPn1.len = 3,
+    tPn2 = "gB!7!5!T!id2!0.3",
+    tPn2.len = 1
+  )
+  expect_equal(different_gene, "gA!5!5!T!id1!0.2")
 })
 
 test_that("tPn.r sets the fourth field to T for one record", {
@@ -273,7 +283,7 @@ test_that("tPn.r sets the fourth field to T for one record", {
 test_that("tPn.r sets the fourth field to T for multiple records", {
   expect_equal(
     tPn.r("gA!12!0!T!id001;iB!34!23!F!id002"),
-    "gA!12!0!T!id001;iB!34!23!T!id002"
+    c("gA!12!0!T!id001", "iB!34!23!T!id002")
   )
 })
 
@@ -282,17 +292,24 @@ test_that("tPn.r preserves record count and the first three fields", {
   output <- tPn.r(input)
 
   in_parts <- strsplit(strsplit(input, ";", fixed = TRUE)[[1]], "!", fixed = TRUE)
-  out_parts <- strsplit(strsplit(output, ";", fixed = TRUE)[[1]], "!", fixed = TRUE)
+  out_parts <- strsplit(output, "!", fixed = TRUE)
 
   expect_length(out_parts, length(in_parts))
   expect_equal(lapply(out_parts, `[`, 1:3), lapply(in_parts, `[`, 1:3))
   expect_equal(vapply(out_parts, `[`, character(1), 4), rep("T", length(out_parts)))
 })
 
+test_that("tPn.r also accepts an already-split character vector of tags", {
+  expect_equal(
+    tPn.r(c("gA!12!0!T!id001", "iB!34!23!F!id002")),
+    c("gA!12!0!T!id001", "iB!34!23!T!id002")
+  )
+})
+
 test_that("tPn.r works with the current 6-field (jump-probability) tag format", {
   expect_equal(
     tPn.r("gA!12!0!T!id001!0.05;iB!34!23!F!id002!0.2"),
-    "gA!12!0!T!id001!0.05;iB!34!23!T!id002!0.2"
+    c("gA!12!0!T!id001!0.05", "iB!34!23!T!id002!0.2")
   )
 })
 
@@ -309,14 +326,14 @@ test_that("tPn.jump leaves tags unchanged when no jump happens", {
     generation = 5
   )
 
-  colnames(gene_df)[1] = paste0(tag,".",colnames(gene_df)[1])
+  colnames(gene_df)[1] = paste0(tag,";",colnames(gene_df)[1])
   expect_equal(out, gene_df)
 })
 
-test_that("tPn.jump clears a previous tag even when its jump probability has a decimal point", {
+test_that("tPn.jump clears a tag left by a previous call before embedding the next one", {
   gene_df <- toy_gene_df()
   ## simulate gene_df carrying a tag left behind by an earlier tPn.jump() call
-  colnames(gene_df)[1] = paste0("gA!1!5!F!id0!0.05", ".", colnames(gene_df)[1])
+  colnames(gene_df)[1] = paste0("gA!1!5!F!id0!0.05", ";", colnames(gene_df)[1])
 
   tag <- "gB!2!6!T!id1!0.1"
   out <- tPn.jump(
@@ -328,15 +345,14 @@ test_that("tPn.jump clears a previous tag even when its jump probability has a d
     generation = 7
   )
 
-  ## should restore "locus_tag" (not a fragment of "0.05") before re-embedding tag
-  expect_equal(colnames(out)[1], paste0(tag, ".locus_tag"))
-  expect_equal(out$locus_tag, gene_df[,1])
+  ## should restore "locus_tag" (not carry over the earlier tag) before re-embedding tag
+  expect_equal(colnames(out)[1], paste0(tag, ";locus_tag"))
 })
 
 test_that("tPn.jump adjusts start/end/length after a jump inside a gene's CDS", {
   gene_df <- toy_gene_df()
   tag <- "gA!1!5!T!id1!1" # jump probability = 1, so tPn.move always triggers a jump
-  colnames(gene_df)[1] = paste0(tag,".",colnames(gene_df)[1])
+  colnames(gene_df)[1] = paste0(tag,";",colnames(gene_df)[1])
 
   out <- tPn.jump(
     tPn.tag = tag,
@@ -348,7 +364,7 @@ test_that("tPn.jump adjusts start/end/length after a jump inside a gene's CDS", 
   )
 
   ## decode the *new* tag tPn.jump embedded in the gene table's first colname
-  new_tag <- sub("\\.locus_tag$", "", colnames(out)[1])
+  new_tag <- sub(";locus_tag$", "", colnames(out)[1])
   fields <- tPn.io(chain = new_tag, encrypt = FALSE)
 
   expect_equal(fields, c("gB", "55", "8", "T", "id1", "1"))
@@ -376,7 +392,7 @@ test_that("tPn.jump adjusts start/end/interLength after a jump in an intergenic 
     generation = 3
   )
 
-  new_tag <- sub("\\.locus_tag$", "", colnames(out)[1])
+  new_tag <- sub(";locus_tag$", "", colnames(out)[1])
   fields <- tPn.io(chain = new_tag, encrypt = FALSE)
 
   ## lands in the intergenic gap before gene C
