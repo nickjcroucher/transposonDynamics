@@ -6,6 +6,8 @@ on:
     paths:
       - "src/func.r"
       - "src/test_func.R"
+      - "src/simulate.r"
+      - "src/test_simulate.R"
       - "raw/**"
       - "data/**"
       - ".github/workflows/test-func.yml"
@@ -13,6 +15,8 @@ on:
     paths:
       - "src/func.r"
       - "src/test_func.R"
+      - "src/simulate.r"
+      - "src/test_simulate.R"
       - "raw/**"
       - "data/**"
       - ".github/workflows/test-func.yml"
@@ -26,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FUNC_R_PATH: ${{ github.workspace }}/src/func.r
+      SIMULATE_R_PATH: ${{ github.workspace }}/src/simulate.r
 
     steps:
       - name: Checkout repository
@@ -46,3 +51,6 @@ jobs:
 
       - name: Run func.r unit tests
         run: Rscript src/test_func.R
+
+      - name: Run simulate.r unit tests
+        run: Rscript src/test_simulate.R

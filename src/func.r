@@ -8,7 +8,6 @@
 # date: 20260623
 
 ##### Constants #####
-# write.csv(data.frame(transposon = rep(10^-(0:5), each = 6), gene = rep(10^-(0:5), 6)), "../raw/scenario.csv", row.names = F, quote = F)
 gVar = c(letters,LETTERS,0:9) # notations for genome variation
 
 ##### Reorganize GFF file information #####
@@ -34,7 +33,7 @@ rNumVec = function(f="", L=1, p1=1, p2=0){
   }else if(f=="uniform"){ return(runif(n = L, min = max(0, p1-p2), max = p1+p2))
   }else if(f=="poisson"){ return(1/(rpois(n = L, lambda = p1) + 1))
   }else if(f=="negbin"){ return(1/(rnbinom(n = L, prob = p1, size = p2) + 1))}
-  stop("Only three function options allowed: normal, uniform, poisson")
+  stop("Only four function options allowed: normal, uniform, poisson")
 }
 
 ##### Format input parameters, gene table, genome stretch, and transposon titres in a host population #####
@@ -81,15 +80,16 @@ ini.host = function(host.var, gene.df, gene.var){
 }
 
 ##### Initiate transposon pool #####
-ini.transposon = function(tPn.size){
+ini.transposon = function(tPn.size, tPn.prob){
   if(length(grep(";",tPn.size))>0){tPn.size = strsplit(tPn.size, ";")[[1]]}
   tPn.size = as.numeric(tPn.size)
-  tPn.wide = as.data.frame(matrix(0, nrow = length(tPn.size), ncol = 5))
+  tPn.wide = as.data.frame(matrix(0, nrow = length(tPn.size), ncol = 6))
   tPn.tmp = matrix(sample(LETTERS, length(tPn.size)*7, replace = T), nrow = length(tPn.size), ncol = 7)
-  tPn.wide[,ncol(tPn.wide)] = apply(tPn.tmp, 1, function(x){paste0(x, collapse = "")})
-  tPn.wide[,4] = "T"
   tPn.wide[,1] = ""
-  return(data.frame(ini = apply(tPn.wide, 1, function(x){paste0(x, collapse = "!")}), uniqID = tPn.wide[,ncol(tPn.wide)], size = tPn.size))
+  tPn.wide[,4] = "T"
+  tPn.wide[,5] = apply(tPn.tmp, 1, function(x){paste0(x, collapse = "")})
+  tPn.wide[,6] = tPn.prob
+  return(data.frame(ini = apply(tPn.wide, 1, function(x){paste0(x, collapse = "!")}), uniqID = tPn.wide[,5], size = tPn.size))
 }
 
 ##### Rescale random number #####
@@ -143,9 +143,9 @@ host.reproduce = function(res.pool, gene.df, transposon.size){
 }
 
 ##### Transposon data format conversion #####
-tPn.io = function(gene = "", location = "", generation = "", valid = "", uniqID = "", chain = "", encrypt = T){
+tPn.io = function(gene = "", location = "", generation = "", valid = "", uniqID = "", jump = "", chain = "", encrypt = T){
   if(encrypt==T){
-    x = paste(c(gene, location, generation, valid, uniqID), collapse = "!")
+    x = paste(c(gene, location, generation, valid, uniqID, jump), collapse = "!")
   }else{
     x = strsplit(chain, "!")[[1]]
   };return(x)
@@ -154,12 +154,12 @@ tPn.io = function(gene = "", location = "", generation = "", valid = "", uniqID 
 ##### Modify notations according to transposon overlaps #####
 tPn.x = function(tPn1, tPn1.len, tPn2, tPn2.len){
   t1 = tPn.io(chain = tPn1, encrypt = F); t2 = tPn.io(chain = tPn2, encrypt = F)
-  t1.span = as.numeric(t1[2]):(as.numeric(t1[2])+as.numeric(tPn1.len)); t2.span = as.numeric(t2[2]):(as.numeric(t2[2])+as.numeric(tPn2.len))
-  if(t1[4]=="T" && any(t2.span %in% t1.span)){ # tPn1 assume always insert earlier than tPn2
-    return(tPn.io(gene = t1[1], location = t1[2], generation = t1[3], valid = "F", uniqID = t1[5], encrypt = T))
-  }else{
-    return(tPn1)
-  }
+  if(t1[1] == t2[1]){
+    t1.span = as.numeric(t1[2]):(as.numeric(t1[2])+as.numeric(tPn1.len)); t2.span = as.numeric(t2[2]):(as.numeric(t2[2])+as.numeric(tPn2.len))
+    if(t1[4]=="T" && any(t2.span %in% t1.span)){ # tPn1 assume always insert earlier than tPn2
+      return(tPn.io(gene = t1[1], location = t1[2], generation = t1[3], valid = "F", uniqID = t1[5], jump = t1[6], encrypt = T))
+  }}
+  return(tPn1)
 }
 
 ##### Revive all transposons #####
@@ -167,14 +167,29 @@ tPn.r = function(tPn){
   if(length(grep(";",tPn))>0){tPn = strsplit(tPn, ";")[[1]]}
   tPn = read.table(text = tPn, sep = "!", colClasses = "character")
   tPn[,4] = "T"
-  tPn.ind = apply(tPn, 1, function(x){paste0(x, collapse = "!")})
-  return(paste0(tPn.ind, collapse = ";"))
+  return(apply(tPn, 1, function(x){paste0(x, collapse = "!")}))
 }
 
 ##### Single transposon jump #####
-tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, jumProb = 0, generation = 1){
-  if(length(grep(".", colnames(gene.df)[1], fixed = T))>0){colnames(gene.df)[1] = strsplit(colnames(gene.df)[1], "[.]")[[1]][2]} # clear previous tPn.tag
+tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, generation = 1, resTpn = 1, hypothesis = "fixed"){
+  if(length(grep(";", colnames(gene.df)[1]))>0){ colnames(gene.df)[1] = strsplit(colnames(gene.df)[1], ";")[[1]][2] } # clear previous tPn.tag
+
+  ## Jumping rate hypothesis (default: fixed jumping probability)
+  jumProb = as.numeric(strsplit(tPn.tag, "!")[[1]][6])
+  if(hypothesis == "charlesworth"){
+    jumProb = jumProb / resTpn # assume linear inhibition effect
+  } else if(hypothesis == "evolving"){
+    jumProb = abs(rnorm(1, mean = jumProb, sd = .1)) # assume sd = 0.1
+  }else if(hypothesis == "genotoxic"){
+    jumProb0 = jumProb
+    jumProb = jumProb * ifelse(runif(1) < .5, 0, 1) * ifelse(runif(1) < .5, 1, 1.5) # genotoxic? -> boost?
+  }else if(hypothesis == "evolving_genotoxic"){
+    jumProb0 = abs(rnorm(1, mean = jumProb, sd = .1)) # assume sd = 0.1
+    jumProb = jumProb * ifelse(runif(1) < .5, 0, 1) * ifelse(runif(1) < .5, 1, 1.5) # genotoxic? -> boost?
+  }
+
   if(strsplit(tPn.tag, "!")[[1]][4]=="T" && tPn.move < jumProb){ # Jump?
+    if(hypothesis %in% c("genotoxic", "evolving_genotoxic")){ jumProb = jumProb0 }
     gene.df$cumsum = cumsum(gene.df$interLength + gene.df$length)/sum(gene.df$interLength + gene.df$length) - tPn.prob
     x = which(gene.df$cumsum >= 0)[1] # the intergenic-genic block that hosts the transposon
     if(x>1){
@@ -185,18 +200,20 @@ tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, jumProb 
     tPn.loc = ceiling(tPn.loc * (gene.df$interLength[x] + gene.df$length[x])) - gene.df$interLength[x]
     if(tPn.loc < 0){ tPn.cds = F; tPn.loc = tPn.loc + gene.df$interLength[x] }else{ tPn.cds = T }
     tPn.old = tPn.io(chain = tPn.tag, encrypt = F)
-    tPn.tag = tPn.io(gene = paste0(ifelse(tPn.cds, "g", "i"), gene.df$locus_tag[x]), location = tPn.loc, generation = generation, valid = "T", uniqID = tPn.old[5])
+    tPn.tag = tPn.io(gene = paste0(ifelse(tPn.cds, "g", "i"), gene.df$locus_tag[x]), location = tPn.loc, generation = generation, valid = "T", uniqID = tPn.old[5], jump = jumProb)
 
     ## Update gene df
     gene.df$cumsum = NULL
     if(tPn.cds){
       gene.df$start[min(x+1, nrow(gene.df)):nrow(gene.df)] = gene.df$start[min(x+1, nrow(gene.df)):nrow(gene.df)] + tPn.size
+      gene.df$length[x] = gene.df$length[x] + tPn.size
     }else{
       gene.df$start[x:nrow(gene.df)] = gene.df$start[x:nrow(gene.df)] + tPn.size
+      gene.df$interLength[x] = gene.df$interLength[x] + tPn.size
     }
     gene.df$end[x:nrow(gene.df)] = gene.df$end[x:nrow(gene.df)] + tPn.size
   }
-  colnames(gene.df)[1] = paste0(tPn.tag,".",colnames(gene.df)[1])
+  colnames(gene.df)[1] = paste0(tPn.tag,";",colnames(gene.df)[1])
   return(gene.df)
 }
 
@@ -218,9 +235,13 @@ gene.recom = function(h1.G, h1.t, h2.G, h2.t, g2to1, locusTags){
 }
 
 ##### Gene recombination in host population, assume ascending order as recipients #####
-g.Recom = function(res.pool, gene.df, recomRate){
+g.Recom = function(res.pool, gene.df, recomRate, hypothesis = "croucher"){
   # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
-  numGenes = floor(lengths(strsplit(res.pool$transposon, ";")) * as.numeric(recomRate) * nrow(gene.df)) # gene recombination rate has a linear increase according to the number of transposons in the genome
+  if(hypothesis == "adv_croucher"){
+    numGenes = floor(lengths(strsplit(res.pool$transposon, ";")) * as.numeric(recomRate) * nrow(gene.df)) # gene recombination rate has a linear increase according to the number of transposons in the genome (advanced croucher)
+  }else{
+    numGenes = rep(floor(as.numeric(recomRate) * nrow(gene.df)), nrow(res.pool)) # croucher (default)
+  }
 
   ## If any gene in recombination mechanism is hit by transposon, no recombination
   if(sum(gene.df$recombination)>0){ for(i in which(gene.df$recombination)){

@@ -96,7 +96,7 @@ test_that("rNumVec delegates to normal, uniform, poisson, and negative binomial 
 
   expect_error(
     rNumVec("negative-binomial", L = 1, p1 = 1, p2 = 1),
-    "Only three function options allowed"
+    "Only four function options allowed"
   )
 })
 
@@ -157,7 +157,7 @@ test_that("ini.host creates compact host genomes and validates variation counts"
 
 test_that("ini.transposon creates encoded transposon records", {
   set.seed(11)
-  out <- ini.transposon("100;200")
+  out <- ini.transposon(tPn.size = "100;200", tPn.prob = 0.1)
   parts <- strsplit(out$ini, split = "!", fixed = TRUE)
 
   expect_s3_class(out, "data.frame")
@@ -169,6 +169,7 @@ test_that("ini.transposon creates encoded transposon records", {
   expect_equal(vapply(parts, `[[`, character(1), 3), rep("0", 2))
   expect_equal(vapply(parts, `[[`, character(1), 4), rep("T", 2))
   expect_equal(vapply(parts, `[[`, character(1), 5), out$uniqID)
+  expect_equal(vapply(parts, `[[`, character(1), 6), rep("0.1", 2))
 })
 
 test_that("reZero rescales values with the provided bounds", {
@@ -219,39 +220,47 @@ test_that("host.reproduce samples offspring and excludes essential-gene insertio
 })
 
 test_that("tPn.io converts between fields and encoded chains", {
-  encoded <- tPn.io(gene = "gA", location = 12, generation = 2, valid = "T", uniqID = "id1")
+  ## transposon tags carry a 6th "jump" field (jump probability), consumed by
+  ## tPn.x() and tPn.jump()
+  encoded <- tPn.io(gene = "gA", location = 12, generation = 2, valid = "T", uniqID = "id1", jump = 0.1)
 
-  expect_equal(encoded, "gA!12!2!T!id1")
+  expect_equal(encoded, "gA!12!2!T!id1!0.1")
   expect_equal(
     tPn.io(chain = encoded, encrypt = FALSE),
-    c("gA", "12", "2", "T", "id1")
+    c("gA", "12", "2", "T", "id1", "0.1")
+  )
+
+  ## jump defaults to "" when omitted, leaving a trailing empty 6th field
+  expect_equal(
+    tPn.io(gene = "gA", location = 12, generation = 2, valid = "T", uniqID = "id1"),
+    "gA!12!2!T!id1!"
   )
 })
 
 test_that("tPn.x invalidates the earlier overlapping transposon", {
   overlap <- tPn.x(
-    tPn1 = "gA!5!5!T!id1",
+    tPn1 = "gA!5!5!T!id1!0.2",
     tPn1.len = 3,
-    tPn2 = "gB!7!5!T!id2",
+    tPn2 = "gB!7!5!T!id2!0.3",
     tPn2.len = 1
   )
-  expect_equal(overlap, "gA!5!5!F!id1")
+  expect_equal(overlap, "gA!5!5!F!id1!0.2")
 
   no_overlap <- tPn.x(
-    tPn1 = "gA!5!5!T!id1",
+    tPn1 = "gA!5!5!T!id1!0.2",
     tPn1.len = 3,
-    tPn2 = "gB!9!5!T!id2",
+    tPn2 = "gB!9!5!T!id2!0.3",
     tPn2.len = 1
   )
-  expect_equal(no_overlap, "gA!5!5!T!id1")
+  expect_equal(no_overlap, "gA!5!5!T!id1!0.2")
 
   already_invalid <- tPn.x(
-    tPn1 = "gA!5!5!F!id1",
+    tPn1 = "gA!5!5!F!id1!0.2",
     tPn1.len = 3,
-    tPn2 = "gB!7!5!T!id2",
+    tPn2 = "gB!7!5!T!id2!0.3",
     tPn2.len = 1
   )
-  expect_equal(already_invalid, "gA!5!5!F!id1")
+  expect_equal(already_invalid, "gA!5!5!F!id1!0.2")
 })
 
 test_that("tPn.r sets the fourth field to T for one record", {
@@ -280,17 +289,23 @@ test_that("tPn.r preserves record count and the first three fields", {
   expect_equal(vapply(out_parts, `[`, character(1), 4), rep("T", length(out_parts)))
 })
 
+test_that("tPn.r works with the current 6-field (jump-probability) tag format", {
+  expect_equal(
+    tPn.r("gA!12!0!T!id001!0.05;iB!34!23!F!id002!0.2"),
+    "gA!12!0!T!id001!0.05;iB!34!23!T!id002!0.2"
+  )
+})
+
 test_that("tPn.jump leaves tags unchanged when no jump happens", {
   gene_df <- toy_gene_df()
-  tag <- "gA!1!5!T!id1"
+  tag <- "gA!1!5!T!id1!0.1" # jump probability (field 6) = 0.1
 
   out <- tPn.jump(
     tPn.tag = tag,
     tPn.prob = 0.9,
     tPn.size = 5,
     gene.df = gene_df,
-    tPn.move = 0.9,
-    jumProb = 0.1,
+    tPn.move = 0.9, # 0.9 >= jump probability, so no jump
     generation = 5
   )
 
@@ -298,9 +313,29 @@ test_that("tPn.jump leaves tags unchanged when no jump happens", {
   expect_equal(out, gene_df)
 })
 
-test_that("tPn.jump returns an adjusted gene table after a jump", {
+test_that("tPn.jump clears a previous tag even when its jump probability has a decimal point", {
   gene_df <- toy_gene_df()
-  tag <- "gA!1!5!T!id1"
+  ## simulate gene_df carrying a tag left behind by an earlier tPn.jump() call
+  colnames(gene_df)[1] = paste0("gA!1!5!F!id0!0.05", ".", colnames(gene_df)[1])
+
+  tag <- "gB!2!6!T!id1!0.1"
+  out <- tPn.jump(
+    tPn.tag = tag,
+    tPn.prob = 0.9,
+    tPn.size = 5,
+    gene.df = gene_df,
+    tPn.move = 0.9, # no jump - isolates the tag-clearing step
+    generation = 7
+  )
+
+  ## should restore "locus_tag" (not a fragment of "0.05") before re-embedding tag
+  expect_equal(colnames(out)[1], paste0(tag, ".locus_tag"))
+  expect_equal(out$locus_tag, gene_df[,1])
+})
+
+test_that("tPn.jump adjusts start/end/length after a jump inside a gene's CDS", {
+  gene_df <- toy_gene_df()
+  tag <- "gA!1!5!T!id1!1" # jump probability = 1, so tPn.move always triggers a jump
   colnames(gene_df)[1] = paste0(tag,".",colnames(gene_df)[1])
 
   out <- tPn.jump(
@@ -309,21 +344,49 @@ test_that("tPn.jump returns an adjusted gene table after a jump", {
     tPn.size = 5,
     gene.df = gene_df,
     tPn.move = 0.5,
-    jumProb = 1,
     generation = 8
   )
-  fields <- tPn.io(chain = tag, encrypt = FALSE)
 
-  expect_length(fields, 5)
-  expect_true(substr(fields[1], 1, 1) %in% c("g", "i"))
-  expect_true(substring(fields[1], 2) %in% gene_df[,1])
-  expect_true(as.numeric(fields[2]) > 0)
-  expect_true(as.numeric(fields[3]) >= 0)
-  expect_equal(fields[4], "T")
-  expect_equal(fields[5], "id1")
+  ## decode the *new* tag tPn.jump embedded in the gene table's first colname
+  new_tag <- sub("\\.locus_tag$", "", colnames(out)[1])
+  fields <- tPn.io(chain = new_tag, encrypt = FALSE)
+
+  expect_equal(fields, c("gB", "55", "8", "T", "id1", "1"))
   expect_false("cumsum" %in% names(out))
   expect_equal(nrow(out), nrow(gene_df))
-  expect_true(any(out$end > gene_df$end))
+
+  ## landed inside gene B's CDS: length grows at row 2, start/end shift for
+  ## everything downstream, interLength untouched
+  expect_equal(out$length, gene_df$length + c(0, 5, 0))
+  expect_equal(out$interLength, gene_df$interLength)
+  expect_equal(out$start, c(1, 101, 206))
+  expect_equal(out$end, c(100, 205, 305))
+})
+
+test_that("tPn.jump adjusts start/end/interLength after a jump in an intergenic region", {
+  gene_df <- toy_gene_df()
+  tag <- "gA!1!5!T!id1!1" # jump probability = 1, so tPn.move always triggers a jump
+
+  out <- tPn.jump(
+    tPn.tag = tag,
+    tPn.prob = 0.65,
+    tPn.size = 5,
+    gene.df = gene_df,
+    tPn.move = 0.5,
+    generation = 3
+  )
+
+  new_tag <- sub("\\.locus_tag$", "", colnames(out)[1])
+  fields <- tPn.io(chain = new_tag, encrypt = FALSE)
+
+  ## lands in the intergenic gap before gene C
+  expect_equal(fields, c("iC", "5", "3", "T", "id1", "1"))
+
+  ## interLength[3] (C's preceding gap) grows by tPn.size; length is untouched
+  expect_equal(out$length, gene_df$length)
+  expect_equal(out$interLength, gene_df$interLength + c(0, 0, 5))
+  expect_equal(out$start, c(1, 101, 206))
+  expect_equal(out$end, c(100, 200, 305))
 })
 
 test_that("gene.recom replaces one allele and transfers matching transposons", {

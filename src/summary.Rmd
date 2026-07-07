@@ -13,6 +13,20 @@ a = read.csv("../data/tpn_dyn.csv", header = T)
 cBar = c("#ffffffff", "#ff00ffff")
 ```
 
+## Initial population settings
+
+Parameter | Value
+--- | ---
+Host population | 500
+Genome variation | 3
+Alleles (each gene) | 10
+Transposon size | 1000 bp
+Transposon titre | Poisson(5)
+Transposon-gene recombination hypothesis | red-queen (Base recombination rate modified by the number of transposons present in the genome)
+Generation time | 100
+Essential genes | 330
+Genes for recombination mechanism | 7 (_comCDE, recA, rexB, recO, recR_)
+
 ## Host genome (_Streptococcus pneumoniae_ D39) genealogy traces
 ```{r echo=FALSE, message=FALSE}
 ggtern(data = a, mapping = aes(x = g1, y = g2, z = g3, colour = name)) +
@@ -32,7 +46,7 @@ Transposon bursts was observed only on gene recombination rate 1e-4. Transposon 
 
 ```{r echo=FALSE, message=FALSE}
 ggplot(data = a) +
-  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = log10(titre))) +
+  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = titre)) +
   labs(x = "log10( Transposon excise rate )", y = "log10( Base gene recombination rate )") +
   geom_text(aes(x = max(log10(jump.rate)), y = max(log10(recombine.rate)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +

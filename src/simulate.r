@@ -20,7 +20,7 @@ sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
 ##### Initiate populations #####
 cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
 hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
-tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
+tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"], tPn.prob = sCene$transposon)
 
 ##### Initiate record dataframes #####
 gEn.max = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant generation number"])
@@ -38,13 +38,13 @@ for(i in 1:nrow(sim.df)){
   ## Map transposons
   for(i0 in 1:length(lOc)){
     if(i0==1){g.tmp = as.data.frame(inFile$gene)}
-    g.tmp = tPn.jump(tPn.tag = tPn.tag[i0], tPn.prob = lOc[i0], tPn.size = tPn$size[match(tPn.tag[i0], tPn$ini)], gene.df = g.tmp, tPn.move = 0, jumProb = 1, generation = 0)
-    tPn.loc[i0] = strsplit(colnames(g.tmp)[1], "[.]")[[1]][1]
-    colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], "[.]")[[1]][2]
+    g.tmp = tPn.jump(tPn.tag = tPn.tag[i0], tPn.prob = lOc[i0], tPn.size = tPn$size[match(tPn.tag[i0], tPn$ini)], gene.df = g.tmp, tPn.move = 0, generation = 0, hypothesis = sCene$jump)
+    tPn.loc[i0] = strsplit(colnames(g.tmp)[1], ";")[[1]][1]
+    colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], ";")[[1]][2]
   };rm(i0, g.tmp)
 
   ## Validate transposons
-  if(length(tPn.loc) > 1){for(i0 in 1:(length(tPn.loc)-1)){for(i1 in 2:length(tPn.loc)){
+  if(length(tPn.loc) > 1){for(i0 in 1:(length(tPn.loc)-1)){for(i1 in (i0+1):length(tPn.loc)){
     tPn.loc[i0] = tPn.x(
       tPn1 = tPn.loc[i0],
       tPn1.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
@@ -101,23 +101,24 @@ gEn = 0; repeat{
           tPn.size = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
           gene.df = g.tmp,
           tPn.move = i0$jump[i1],
-          jumProb = sCene$transposon[1],
-          generation = gEn
+          generation = gEn,
+          hypothesis = sCene$jump
         )
-        tPn.list[[i]][i1] = strsplit(colnames(g.tmp)[1], "[.]")[[1]][1]
-        colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], "[.]")[[1]][2]
+        tPn.list[[i]][i1] = strsplit(colnames(g.tmp)[1], ";")[[1]][1]
+        colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], ";")[[1]][2]
       };rm(i0,i1)
 
   ### 4. Validate each transposon
       tPn.list[[i]] = tPn.r(tPn.list[[i]])
-      if(length(tPn.list[[i]])>1){ for(i1 in 1:(length(tPn.list[[i]])-1)){ for(i2 in 2:length(tPn.list[[i]])){
-        tPn.list[[i]][i1] = tPn.x(
-          tPn1 = tPn.list[[i]][i1],
-          tPn1.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
-          tPn2 = tPn.list[[i]][i2],
-          tPn2.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
-          )
-      }};rm(i1,i2)}
+      if(length(tPn.list[[i]])>1){  for(i1 in 1:(length(tPn.list[[i]])-1)){ for(i2 in (i1+1):length(tPn.list[[i]])){
+          tPn.list[[i]][i1] = tPn.x(
+            tPn1 = tPn.list[[i]][i1],
+            tPn1.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
+            tPn2 = tPn.list[[i]][i2],
+            tPn2.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
+            )
+      }};rm(i1,i2) }
+      # tPn.list[[i]] = tPn.r(paste0(tPn.list[[i]], collapse = ";"))
       sim.df$transposon[i] = paste0(tPn.list[[i]], collapse = ";")
     }
   };rm(i)
