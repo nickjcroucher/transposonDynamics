@@ -34,6 +34,7 @@ toy_gene_df <- function() {
     interLength = c(0, 10, 20),
     essential = c(FALSE, FALSE, FALSE),
     recombination = c(FALSE, FALSE, FALSE),
+    advantage = c(FALSE, FALSE, FALSE),
     stringsAsFactors = FALSE
   )
 }
@@ -113,7 +114,7 @@ test_that("inParams loads parameters, gene table, and initial transposon titres"
   expect_named(out, c("params", "gene", "transposon.titre"))
   expect_true(all(c(
     "locus_tag", "start", "end", "product", "length", "interLength",
-    "essential", "recombination"
+    "essential", "recombination", "advantage"
   ) %in% names(out$gene)))
   expect_gt(nrow(out$params), 0)
   expect_gt(nrow(out$gene), 0)
@@ -217,6 +218,39 @@ test_that("host.reproduce samples offspring and excludes essential-gene insertio
   set.seed(1)
   filtered <- host.reproduce(res.pool = res_pool, gene.df = gene_df, transposon.size = 0)
   expect_false(any(filtered$familyTree == 2))
+})
+
+test_that("host.reproduce boosts reproduction probability for advantage-gene insertions", {
+  gene_df <- toy_gene_df()
+  gene_df$advantage[gene_df$locus_tag == "B"] <- TRUE
+  res_pool <- data.frame(
+    host = c("aaa", "bbb", "ccc"),
+    transposon = c("gA!1!5!T!id1", "gB!2!5!T!id2", "gC!3!5!T!id3"),
+    stringsAsFactors = FALSE
+  )
+
+  ## with transposon.size = 0 and a 50% fitness advantage on gene B, the
+  ## reproduction weights work out to c(2/7, 3/7, 2/7) after normalisation
+  set.seed(42)
+  b_share <- replicate(2000, {
+    out <- host.reproduce(
+      res.pool = res_pool, gene.df = gene_df, transposon.size = 0,
+      fitness.advantage = 50
+    )
+    mean(out$host == "bbb")
+  })
+  expect_equal(mean(b_share), 3 / 7, tolerance = 0.03)
+
+  ## fitness.advantage = 0 should reduce back to an equal split (1/3 each)
+  set.seed(42)
+  b_share0 <- replicate(2000, {
+    out <- host.reproduce(
+      res.pool = res_pool, gene.df = gene_df, transposon.size = 0,
+      fitness.advantage = 0
+    )
+    mean(out$host == "bbb")
+  })
+  expect_equal(mean(b_share0), 1 / 3, tolerance = 0.03)
 })
 
 test_that("tPn.io converts between fields and encoded chains", {
@@ -403,6 +437,74 @@ test_that("tPn.jump adjusts start/end/interLength after a jump in an intergenic 
   expect_equal(out$interLength, gene_df$interLength + c(0, 0, 5))
   expect_equal(out$start, c(1, 101, 206))
   expect_equal(out$end, c(100, 200, 305))
+})
+
+test_that("tPn.jump's genotoxic perturbation only fires at the configured generation", {
+  gene_df <- toy_gene_df()
+  tag <- "gA!1!5!T!id1!0.5" # jump probability (field 6) = 0.5
+
+  ## genotoxic_Params["gen"] = 10 but generation = 5, so the genotoxic
+  ## suppression/boost logic must be skipped and jumProb stays at 0.5
+  out <- tPn.jump(
+    tPn.tag = tag,
+    tPn.prob = 0.5,
+    tPn.size = 5,
+    gene.df = gene_df,
+    tPn.move = 0.3, # < 0.5, so a jump happens unless something suppresses it
+    generation = 5,
+    hypothesis = "genotoxic",
+    genotoxic_Params = c(gen = 10, toxicProb = 1, boostProb = 0, boostCoef = 1.5)
+  )
+
+  new_tag <- sub(";locus_tag$", "", colnames(out)[1])
+  fields <- tPn.io(chain = new_tag, encrypt = FALSE)
+  expect_equal(fields[1], "gB")
+  expect_equal(fields[6], "0.5")
+})
+
+test_that("tPn.jump's genotoxic perturbation can suppress a jump at the configured generation", {
+  gene_df <- toy_gene_df()
+  tag <- "gA!1!5!T!id1!0.5"
+
+  ## toxicProb = 1 deterministically suppresses jumProb to 0 this generation,
+  ## so no jump should happen even though tPn.move = 0
+  out <- tPn.jump(
+    tPn.tag = tag,
+    tPn.prob = 0.5,
+    tPn.size = 5,
+    gene.df = gene_df,
+    tPn.move = 0,
+    generation = 5,
+    hypothesis = "genotoxic",
+    genotoxic_Params = c(gen = 5, toxicProb = 1, boostProb = 0, boostCoef = 1.5)
+  )
+
+  expected <- gene_df
+  colnames(expected)[1] <- paste0(tag, ";", colnames(expected)[1])
+  expect_equal(out, expected)
+})
+
+test_that("tPn.jump's genotoxic perturbation can boost a jump without persisting the boosted value", {
+  gene_df <- toy_gene_df()
+  tag <- "gA!1!5!T!id1!0.5"
+
+  ## boostProb = 1 deterministically boosts jumProb to 0.5*1.5 = 0.75 this
+  ## generation; tPn.move = 0.6 would fail to trigger a jump at the original 0.5
+  out <- tPn.jump(
+    tPn.tag = tag,
+    tPn.prob = 0.5,
+    tPn.size = 5,
+    gene.df = gene_df,
+    tPn.move = 0.6,
+    generation = 5,
+    hypothesis = "genotoxic",
+    genotoxic_Params = c(gen = 5, toxicProb = 0, boostProb = 1, boostCoef = 1.5)
+  )
+
+  new_tag <- sub(";locus_tag$", "", colnames(out)[1])
+  fields <- tPn.io(chain = new_tag, encrypt = FALSE)
+  expect_equal(fields[1], "gB") # jump happened (only possible if jumProb was boosted)
+  expect_equal(fields[6], "0.5") # the boosted 0.75 is not persisted into the tag
 })
 
 test_that("gene.recom replaces one allele and transfers matching transposons", {

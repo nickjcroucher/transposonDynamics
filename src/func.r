@@ -48,6 +48,7 @@ inParams = function(pArams = "../raw/input.csv"){
   gEne$interLength[x] = 0
   gEne$essential = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="essential genes"], ";")[[1]] ## essential genes
   gEne$recombination = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="genes for recombination mechanism"], ";")[[1]] ## recombination mechanism
+  gEne$advantage = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="genes for fitness advantage"], ";")[[1]] ## genes for fitness advantage
   gEnome = as.numeric(unname(gFf[gFf$type=="region", c("start", "end")]))
   gEnome = gEnome[order(gEnome)]
 
@@ -117,20 +118,15 @@ reGeneDF = function(tPn, tPn.size, gene.df){
 }
 
 ##### New host population #####
-host.reproduce = function(res.pool, gene.df, transposon.size){
+host.reproduce = function(res.pool, gene.df, transposon.size, fitness.advantage){
   # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
   ## Calculate ecological fitness deficit
   transposon.size = as.numeric(transposon.size)
   offspring.prob = rep(1, nrow(res.pool))/nrow(res.pool)
   eSsential = which(gene.df$essential)
-  if(length(eSsential) > 0){ # dead if transposon inserted in essential genes
-    for(i in 1:length(eSsential)){
-      dEad = grep(gene.df$locus_tag[eSsential[i]], res.pool$transposon)
-      extra.prob = sum(offspring.prob[dEad])
-      offspring.prob[dEad] = 0
-      offspring.prob[-dEad] = offspring.prob[-dEad] + extra.prob/length(offspring.prob[-dEad])
-    };rm(i,dEad,extra.prob)
-  }
+  if(length(eSsential) > 0){ for(i in 1:length(eSsential)){ offspring.prob[grep(gene.df$locus_tag[eSsential[i]], res.pool$transposon)] = 0 };rm(i) }# dead if transposon inserted in essential genes
+  aDvantage = which(gene.df$advantage) # genes with fitness advantage if transposons are inserted
+  if(length(aDvantage) > 0){ for(i in 1:length(aDvantage)){ offspring.prob[grep(gene.df$locus_tag[aDvantage[i]], res.pool$transposon)] = offspring.prob[grep(gene.df$locus_tag[aDvantage[i]], res.pool$transposon)] * (1 + fitness.advantage/100) };rm(i) }
   tPn.count = lengths(strsplit(res.pool$transposon, ";"))
   tPn.count[offspring.prob==0] = 0
   offspring.prob = offspring.prob * (1 - transposon.size / sum(gene.df[,c("length", "interLength")]) * tPn.count)
@@ -171,25 +167,25 @@ tPn.r = function(tPn){
 }
 
 ##### Single transposon jump #####
-tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, generation = 1, resTpn = 1, hypothesis = "fixed"){
+tPn.jump = function(tPn.tag, tPn.prob, tPn.size, gene.df, tPn.move = 0, generation = 1, resTpn = 1, hypothesis = "fixed", genotoxic_Params = c(gen = 0, toxicProb = 0, boostProb = 0, boostCoef = 1.5)){
   if(length(grep(";", colnames(gene.df)[1]))>0){ colnames(gene.df)[1] = strsplit(colnames(gene.df)[1], ";")[[1]][2] } # clear previous tPn.tag
 
   ## Jumping rate hypothesis (default: fixed jumping probability)
   jumProb = as.numeric(strsplit(tPn.tag, "!")[[1]][6])
+  g0 = (runif(2) < genotoxic_Params[2:3]) # only functional with genotoxic scenarios, but put it here to make pseudo-random numbers comparable between simulations
   if(hypothesis == "charlesworth"){
     jumProb = jumProb / resTpn # assume linear inhibition effect
   } else if(hypothesis == "evolving"){
     jumProb = abs(rnorm(1, mean = jumProb, sd = .1)) # assume sd = 0.1
-  }else if(hypothesis == "genotoxic"){
-    jumProb0 = jumProb
-    jumProb = jumProb * ifelse(runif(1) < .5, 0, 1) * ifelse(runif(1) < .5, 1, 1.5) # genotoxic? -> boost?
-  }else if(hypothesis == "evolving_genotoxic"){
-    jumProb0 = abs(rnorm(1, mean = jumProb, sd = .1)) # assume sd = 0.1
-    jumProb = jumProb * ifelse(runif(1) < .5, 0, 1) * ifelse(runif(1) < .5, 1, 1.5) # genotoxic? -> boost?
+  }else if(length(grep("genotoxic", hypothesis))>0){
+    if(length(grep("evolving", hypothesis))>0){ jumProb0 = abs(rnorm(1, mean = jumProb, sd = .1)) }else{ jumProb0 = jumProb }
+    if(generation == genotoxic_Params[1]){
+      jumProb = min(jumProb * ifelse(g0[1], 0, 1) * ifelse(g0[2], genotoxic_Params[4], 1), 1) # genotoxic? -> boost?
+    }
   }
 
   if(strsplit(tPn.tag, "!")[[1]][4]=="T" && tPn.move < jumProb){ # Jump?
-    if(hypothesis %in% c("genotoxic", "evolving_genotoxic")){ jumProb = jumProb0 }
+    if(length(grep("genotoxic", hypothesis))>0){ jumProb = jumProb0 }
     gene.df$cumsum = cumsum(gene.df$interLength + gene.df$length)/sum(gene.df$interLength + gene.df$length) - tPn.prob
     x = which(gene.df$cumsum >= 0)[1] # the intergenic-genic block that hosts the transposon
     if(x>1){

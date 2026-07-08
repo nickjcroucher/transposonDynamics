@@ -16,6 +16,10 @@ source("func.r")
 set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
 sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
+gPrm = c(c(gen = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation generation"]),
+           toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation genotoxic probability"]),
+           boostProb = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation boost probability"]),
+           boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation boost coefficient"])))
 
 ##### Initiate populations #####
 cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
@@ -38,7 +42,7 @@ for(i in 1:nrow(sim.df)){
   ## Map transposons
   for(i0 in 1:length(lOc)){
     if(i0==1){g.tmp = as.data.frame(inFile$gene)}
-    g.tmp = tPn.jump(tPn.tag = tPn.tag[i0], tPn.prob = lOc[i0], tPn.size = tPn$size[match(tPn.tag[i0], tPn$ini)], gene.df = g.tmp, tPn.move = 0, generation = 0, hypothesis = sCene$jump)
+    g.tmp = tPn.jump(tPn.tag = tPn.tag[i0], tPn.prob = lOc[i0], tPn.size = tPn$size[match(tPn.tag[i0], tPn$ini)], gene.df = g.tmp, tPn.move = 0, generation = 0, hypothesis = sCene$jump, genotoxic_Params = gPrm)
     tPn.loc[i0] = strsplit(colnames(g.tmp)[1], ";")[[1]][1]
     colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], ";")[[1]][2]
   };rm(i0, g.tmp)
@@ -67,7 +71,7 @@ gEn = 0; repeat{
 #  cat(date(),": generation",gEn,"\n")
 
   ## Population reproduction stage
-  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, transposon.size = inFile$params$Value[inFile$params$Type=="transposon size in bp"])
+  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, transposon.size = inFile$params$Value[inFile$params$Type=="transposon size in bp"], fitness.advantage = as.numeric(inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"]))
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators
@@ -102,7 +106,8 @@ gEn = 0; repeat{
           gene.df = g.tmp,
           tPn.move = i0$jump[i1],
           generation = gEn,
-          hypothesis = sCene$jump
+          hypothesis = sCene$jump,
+          genotoxic_Params = gPrm
         )
         tPn.list[[i]][i1] = strsplit(colnames(g.tmp)[1], ";")[[1]][1]
         colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], ";")[[1]][2]
