@@ -7,7 +7,7 @@ COPY env.yaml /tmp/env.yaml
 RUN micromamba install -y -n base -f /tmp/env.yaml && micromamba clean --all --yes
 #RUN Rscript -e "BiocManager::install('xlsx2dfs')"
 COPY src /src
-COPY raw/*.csv /raw
+COPY raw /raw
 #COPY /nfs/users/nfs_l/lf16/scripts/gbk_to_gff3.py /src/gbk_to_gff3.py
 WORKDIR /src
 CMD ["R", "--version"]
