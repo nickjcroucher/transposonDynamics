@@ -9,7 +9,9 @@
 
 PATH="/software/isg/private/wrappers/apptainer/1.4.0:$PATH"
 
-mkdir -p ../data && apptainer pull docker://ghcr.io/nickjcroucher/transposondynamics:latest
+mkdir -p ../data
+
+[[ -f transposondynamics_latest.sif ]] && rm transposondynamics_latest.sif && apptainer pull docker://ghcr.io/nickjcroucher/transposondynamics:latest
 
 bsub < sangerHPC_child.sh
 
