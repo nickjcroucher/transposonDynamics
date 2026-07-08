@@ -17,6 +17,6 @@
 
 PATH="/software/isg/private/wrappers/apptainer/1.4.0:$PATH"
 
-apptainer run --bind ${PWD}/../data:/data,${PWD}/../raw:/raw tdy.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
+apptainer run --bind ${PWD}/../data:/data,${PWD}/../raw:/raw --pwd /src transposondynamics_latest.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
 
 exit
