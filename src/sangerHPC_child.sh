@@ -10,13 +10,14 @@
 # BSUB -G team377f
 # BSUB -o ../work/pj02-%J-%I.o
 # BSUB -e ../work/pj02-%J-%I.e
-# BSUB -q long
+# BSUB -q week
 # BSUB -M 4000
 # BSUB -R "select[mem>4000] rusage[mem=4000] span[hosts=1]"
-# BSUB -J "tdy[1-360]"
+# BSUB -J "tdy[1-584]"
 
 PATH="/software/isg/private/wrappers/apptainer/1.4.0:$PATH"
+# BSUB -J "tdy[1-360]"
 
-apptainer run --bind ${PWD}/../data:/data,${PWD}/../raw:/raw --pwd /src transposondynamics_latest.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
+apptainer run --bind ${PWD}/../data:/data --pwd /src transposondynamics_latest.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
 
 exit

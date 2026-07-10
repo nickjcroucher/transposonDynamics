@@ -14,8 +14,12 @@ sedCSV=$2
 sceCSV=$3
 hPc=$4
 
-for i in `seq 1 10`;do
-  Rscript simulate.r ${inpCSV} ${sedCSV} ${i} ${sceCSV} ${hPc}
-done
+i=`head -n ${hPc} ../data/rerun.csv | tail -n 1`
+i1=`echo -e ${i} | cut -f 1 -d ","`
+i2=`echo -e ${i} | cut -f 2 -d ","`
+Rscript simulate.r ${inpCSV} ${sedCSV} ${i1} ${sceCSV} ${i2}
+#for i in `seq 1 10`;do
+#  Rscript simulate.r ${inpCSV} ${sedCSV} ${i} ${sceCSV} ${hPc}
+#done
 
 exit

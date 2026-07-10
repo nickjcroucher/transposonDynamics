@@ -7,14 +7,19 @@
 # arg: NA
 # date: 20260703
 
+source("p_path.r")
 source("func_analysis.r")
-f0 = list.files("../data", ".rda", full.names = T)
+#f0 = list.files("../data", ".rda", full.names = T)
 pAr = read.csv("../raw/scenario.csv", header = T)
+f0 = p.file[grep(".rda", p.file, fixed = T)]
+f0 = f0[grep("Transcend", f0)]
+f0 = f0[grep("-1_", f0)]
+f0 = f0[read.table(text = sub("[.]","_",read.table(text = f0, sep = "-")[,3]), sep = "_")[,2] <= 36]
 
 ##### Load all data files #####
 d0.host = d0.tpns = d0.offs = vector(mode = "list", length = length(f0))
-names(d0.host) = names(d0.offs) = names(d0.tpns) = sub(".rda","",list.files("../data", ".rda", full.names = F))
-for(i in 1:length(f0)){
+names(d0.host) = names(d0.offs) = names(d0.tpns) = sub(".rda","",read.table(text = f0, sep = "/")[,6])
+for(i in 1:length(f0)){ # too much data
   load(f0[i])
   d0.host[[i]] = rec.host
   d0.offs[[i]] = fAmily(rec.offspring)
@@ -40,4 +45,5 @@ for(i in 1:nrow(tpn.div)){
   tpn.div[i,6:ncol(tpn.div)] = c(sum(tpn.i), diversity(tpn.i, index = "shannon"), diversity(tpn.i, index = "inv"), chao1(tpn.i, taxa.row = F),fam.i[match(fam.typ, names(fam.i))]/sum(fam.i))
 };rm(i, tpn.i, fam.i)
 tpn.div[is.na(tpn.div)] = 0
-write.csv(tpn.div, "../data/tpn_dyn.csv", row.names = F, quote = F)
+# write.csv(tpn.div, "../data/tpn_dyn.csv", row.names = F, quote = F)
+write.csv(tpn.div, "../data/tpn_dyn500.csv", row.names = F, quote = F)
