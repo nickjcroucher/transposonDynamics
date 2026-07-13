@@ -10,7 +10,7 @@ output: html_document
 ```{r echo=FALSE, message=FALSE}
 source("func_analysis.r")
 # a = read.csv("../data/tpn_dyn.csv", header = T)
-a = read.csv("../data/tpn_dyn500.csv", header = T)
+a = read.csv("../data/tpn_dyn500-1_5.csv", header = T)
 cBar = c("#ffffffff", "#ff00ffff")
 ```
 
@@ -53,7 +53,7 @@ Transposon bursts was observed only on gene recombination rate 1e-4. Transposon 
 
 ```{r echo=FALSE, message=FALSE}
 ggplot(data = a) +
-  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = log10(titre))) +
+  geom_tile(aes(x = log10(jump.rate), y = log10(recombine.rate), fill = titre)) +
   labs(x = "log10( Transposon excise rate )", y = "log10( Base gene recombination rate )") +
   geom_text(aes(x = max(log10(jump.rate)), y = max(log10(recombine.rate)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
@@ -66,7 +66,7 @@ ggplot(data = a) +
 
 For base gene recombination rate = 1e-4,
 ```{r echo=FALSE, message=FALSE}
-a.high = a[which(a[,2]==1e-4),]
+a.high = a[which(a[,2] == 1e-4),]
 a.titre = as.data.frame(matrix(nrow = max(a$generation)+1, ncol = length(summary(0))))
 colnames(a.titre) = names(summary(0))
 

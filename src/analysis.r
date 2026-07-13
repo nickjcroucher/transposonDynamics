@@ -7,14 +7,15 @@
 # arg: NA
 # date: 20260703
 
+rEp = as.numeric(commandArgs(T))
 source("p_path.r")
 source("func_analysis.r")
 #f0 = list.files("../data", ".rda", full.names = T)
 pAr = read.csv("../raw/scenario.csv", header = T)
 f0 = p.file[grep(".rda", p.file, fixed = T)]
 f0 = f0[grep("Transcend", f0)]
-f0 = f0[grep("-1_", f0)]
-f0 = f0[read.table(text = sub("[.]","_",read.table(text = f0, sep = "-")[,3]), sep = "_")[,2] <= 36]
+f0 = f0[grep(paste0("-",rEp,"_"), f0)]
+f0 = f0[read.table(text = sub("[.]","_",read.table(text = f0, sep = "-")[,3]), sep = "_")[,2] %in% (c(1:36)+(36*(rEp-1)))]
 
 ##### Load all data files #####
 d0.host = d0.tpns = d0.offs = vector(mode = "list", length = length(f0))
@@ -46,4 +47,4 @@ for(i in 1:nrow(tpn.div)){
 };rm(i, tpn.i, fam.i)
 tpn.div[is.na(tpn.div)] = 0
 # write.csv(tpn.div, "../data/tpn_dyn.csv", row.names = F, quote = F)
-write.csv(tpn.div, "../data/tpn_dyn500.csv", row.names = F, quote = F)
+write.csv(tpn.div, paste0("../data/tpn_dyn500-1_",rEp,".csv"), row.names = F, quote = F)
