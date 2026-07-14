@@ -13,6 +13,6 @@ transposon population size per genome mean,5,high number indicates more transpos
 transposon population size per genome sd,0,high number indicates more variation in transposon titre detected per genome
 transposon population size per genome distribution,poisson,uniform / normal / poisson / negbin
 transposon perturbation generation,100,
-transposon perturbation genotoxic probability,0.8,
-transposon perturbation boost probability,0.8,
-transposon perturbation boost coefficient,1.5,
+percentage transposon perturbation genotoxic,0.1,
+percentage chance transposon perturbation boost,80,
+percentage amplitude transposon perturbation boost,150,

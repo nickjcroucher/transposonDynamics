@@ -17,9 +17,9 @@ set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
 sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
 gPrm = c(c(gen = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation generation"]),
-           toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation genotoxic probability"]),
-           boostProb = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation boost probability"]),
-           boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation boost coefficient"])))
+           toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage transposon perturbation genotoxic"])/100,
+           boostProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage chance transposon perturbation boost"])/100,
+           boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="percentage amplitude transposon perturbation boost"])/100))
 
 ##### Initiate populations #####
 cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
