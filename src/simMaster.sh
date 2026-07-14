@@ -3,6 +3,9 @@
 # script: simMaster.sh
 # desc: run simulation with replicates
 # in: bash simMaster.sh [../raw/input.csv] [../raw/seed.csv] [../raw/scenario.csv] [scenario line number]
+# out: Run simulation according to scenes set by rerun.csv
+# arg: 4
+# date: 20260710
 
 # for i in `seq 1 36`;do bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${i} > ${i}.e.txt & done
 # for i in `ls *.e.*`;do [[ `grep -e "warnings" ${i}` ]] && echo -e "${i}";done
