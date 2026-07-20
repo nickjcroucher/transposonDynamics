@@ -7,7 +7,7 @@
 # arg: NA
 # date: 20260703
 
-for(i in c("vegan", "fossil", "gganimate", "ggplot2", "ggtern")){suppressPackageStartupMessages(library(i, character.only = T))};rm(i)
+#for(i in c("vegan", "fossil", "gganimate", "ggplot2", "ggtern")){suppressPackageStartupMessages(library(i, character.only = T))};rm(i)
 #source("func.r")
 
 ##### Colour #####

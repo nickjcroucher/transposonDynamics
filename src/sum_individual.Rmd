@@ -1,0 +1,77 @@
+---
+title: "Transposon Dynamics - perspective on individuals"
+author: "ph-u"
+date: "20260719"
+output: html_document
+---
+
+```{r echo=F, message=F, warning=F}
+#source("sum_individual.r")
+source("func_analysis.r")
+load("../data/sum_ind.rda")
+cBl = paste0(substr(cBl,1,7), "77")
+leg.note = data.frame(jump = rep(levels(as.factor(r0.plt$jump)), each = length(unique(r0.plt$recom))), recom = levels(as.factor(r0.plt$recom)), leg = paste0(rep(levels(as.factor(r0.plt$jump)), each = length(unique(r0.plt$recom)))," + ", levels(as.factor(r0.plt$recom))), pch = as.numeric(as.factor(levels(as.factor(r0.plt$recom)))), col = rep(as.numeric(as.factor(levels(as.factor(r0.plt$jump)))), each = length(unique(r0.plt$recom))))
+r0.plt$pch = leg.note$pch[match(r0.plt$recom, leg.note$recom)]
+r0.plt$col = leg.note$col[match(r0.plt$jump, leg.note$jump)]
+hYp = unique(paste0(r0.plt$jump, " + ", r0.plt$recom))
+par(mar = c(0,0,0,0), cex = 2)
+plot(0,0, col = "#00000000", xaxt = "n", yaxt = "n", xlab = "", ylab = "", xlim = c(-1,1), ylim = c(-1,1))
+legend("center", ncol = 1, legend = leg.note$leg, pch = leg.note$pch, col = cBp[leg.note$col])
+```
+
+# Transposon titre
+
+```{r echo=F, message=F}
+lAbs = c("Generation", "Titre", "popn.")
+par(mar = c(5,4,1,0))
+for(i in c("Mean", "Min.", "1st Qu.", "Median", "3rd Qu.", "Max.")){
+  plot(x = r0.plt$x.axis, y = r0.plt[,paste0(lAbs[3], i)], pch = r0.plt$pch, col = cBl[unique(r0.plt$col)], xlab = lAbs[1], ylab = lAbs[2], cex = .3, main = gsub("[.]", "", i))
+};rm(i)
+```
+
+## Example from each combination of hypotheses
+
+```{r echo = F, message=F}
+par(mar = c(5,4,4,0))
+for(i in 1:length(sEl)){
+  matplot(x = (1:nrow(r0.nGen[[i]]))-1, y = r0.nGen[[i]], pch = 1, col = cBp[1:ncol(r0.nGen[[i]])], xlab = lAbs[1], ylab = lAbs[2], cex = .3, main = paste0("Sample from hypothesis \'", hYp[i], "\':\ninitial transposon excise rate = ", r0.plt$transposon[sEl[i]], ",\ninitial gene recombination rate = ", r0.plt$gene[sEl[i]]))
+};rm(i)
+```
+
+# Transposon jump generation
+
+```{r echo=F, message=F}
+lAbs = c("Generation", "Excise generation", "jump.")
+par(mar = c(5,4,1,0))
+for(i in c("Mean", "Min.", "1st Qu.", "Median", "3rd Qu.", "Max.")){
+  plot(x = r0.plt$x.axis, y = r0.plt[,paste0(lAbs[3], i)], pch = r0.plt$pch, col = cBl[r0.plt$col], xlab = lAbs[1], ylab = lAbs[2], cex = .3, main = gsub("[.]", "", i))
+};rm(i)
+```
+
+## Example from each combination of hypotheses
+
+```{r echo = F, message=F}
+par(mar = c(5,4,4,0))
+for(i in 1:length(sEl)){
+  matplot(x = (1:nrow(r0.jGen[[i]]))-1, y = r0.jGen[[i]], pch = 1, col = cBp[1:ncol(r0.jGen[[i]])], xlab = lAbs[1], ylab = lAbs[2], cex = .3, main = paste0("Sample from hypothesis \'", hYp[i], "\':\ninitial transposon excise rate = ", r0.plt$transposon[sEl[i]], ",\ninitial gene recombination rate = ", r0.plt$gene[sEl[i]]))
+};rm(i)
+```
+
+# Transposon distributions between coding/non-coding regions
+
+```{r echo=F, message=F}
+lAbs = c("Generation", "Proportion in coding regions", "gene.")
+par(mar = c(5,4,1,0))
+for(i in c("Mean", "Min.", "1st Qu.", "Median", "3rd Qu.", "Max.")){
+  plot(x = r0.plt$x.axis, y = r0.plt[,paste0(lAbs[3], i)], pch = r0.plt$pch, col = cBl[r0.plt$col], xlab = lAbs[1], ylab = lAbs[2], cex = .3, main = gsub("[.]", "", i))
+};rm(i)
+```
+
+## Example from each combination of hypotheses
+
+```{r echo = F, message=F}
+par(mar = c(5,4,4,0))
+for(i in 1:length(sEl)){
+  matplot(x = (1:nrow(r0.gGen[[i]]))-1, y = r0.gGen[[i]], pch = 1, col = cBp[1:ncol(r0.gGen[[i]])], xlab = lAbs[1], ylab = lAbs[2], cex = .3, main = paste0("Sample from hypothesis \'", hYp[i], "\':\ninitial transposon excise rate = ", r0.plt$transposon[sEl[i]], ",\ninitial gene recombination rate = ", r0.plt$gene[sEl[i]]))
+};rm(i)
+```

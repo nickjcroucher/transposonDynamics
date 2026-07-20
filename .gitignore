@@ -11,3 +11,4 @@ res
 *.fast*
 ncbi_datase*
 *.tsv
+*.aa
