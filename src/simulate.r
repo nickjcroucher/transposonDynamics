@@ -2,7 +2,7 @@
 # author: ph-u
 # script: simulate.r
 # desc: Discrete-time model for transposon ecology within one genome
-# in: Rscript simulate.r [../custom/loc/input.csv]
+# in: Rscript simulate.r [../custom/loc/input.csv] [../custom/loc/seed.csv] [seed number] [../custom/loc/scenario.csv] [scenario number]
 # out: NA
 # arg: 1 (optional)
 # date: 20260623
@@ -16,18 +16,21 @@ source("func.r")
 set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
 sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
-gPrm = c(c(gen = as.numeric(inFile$params$Value[inFile$params$Type=="transposon perturbation generation"]),
-           toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage transposon perturbation genotoxic"])/100,
+gPrm = c(toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage transposon perturbation genotoxic"])/100,
            boostProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage chance transposon perturbation boost"])/100,
-           boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="percentage amplitude transposon perturbation boost"])/100))
+           boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="percentage amplitude transposon perturbation boost"])/100)
 
 ##### Initiate populations #####
 cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
 hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
-tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"], tPn.prob = sCene$transposon)
+tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"], scenario = sCene)
 
 ##### Initiate record dataframes #####
 gEn.max = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant generation number"])
+
+perturbGen = ceiling(rev(seq(1, gEn.max, gEn.max/(sCene$genotoxic+1))))-1
+perturbGen[perturbGen==0] = gEn.max + 1 # a numeric placeholder that can never achieve
+
 rec.host = rec.transposon = rec.offspring = as.data.frame(matrix(NA, nrow = gEn.max + 1, ncol = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant population size"])))
 sim.df = as.data.frame(matrix(NA, nrow = ncol(rec.host), ncol = 3))
 colnames(sim.df) = c("host", "transposon", "familyTree")
@@ -42,26 +45,22 @@ for(i in 1:nrow(sim.df)){
   ## Map transposons
   for(i0 in 1:length(lOc)){
     if(i0==1){g.tmp = as.data.frame(inFile$gene)}
-    g.tmp = tPn.jump(tPn.tag = tPn.tag[i0], tPn.prob = lOc[i0], tPn.size = tPn$size[match(tPn.tag[i0], tPn$ini)], gene.df = g.tmp, tPn.move = 0, generation = 0, hypothesis = sCene$jump, genotoxic_Params = gPrm)
-    tPn.loc[i0] = strsplit(colnames(g.tmp)[1], ";")[[1]][1]
-    colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], ";")[[1]][2]
+    g.tmp = tPn.act(tPn = tPn.tag[i0], gen = 0, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = F)
+    tPn.loc[i0] = tPn.get(g.tmp)
+    colnames(g.tmp)[1] = tPn.get(g.tmp, F)
   };rm(i0, g.tmp)
 
   ## Validate transposons
   if(length(tPn.loc) > 1){for(i0 in 1:(length(tPn.loc)-1)){for(i1 in (i0+1):length(tPn.loc)){
-    tPn.loc[i0] = tPn.x(
-      tPn1 = tPn.loc[i0],
-      tPn1.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
-      tPn2 = tPn.loc[i1],
-      tPn2.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
-    )
+    tPn.loc[i0] = tPn.x(tPn1 = tPn.loc[i0], tPn2 = tPn.loc[i1])
   }};rm(i0,i1)}
   sim.df$transposon[i] = paste0(tPn.loc, collapse = ";")
 };rm(i, tPn.loc)
 
 ##### Wright-Fisher / Neutral model run #####
-cat(date(),": run simulation",argv[3],"-",argv[5],"\n")
+tPn.iDx = "transposon population size per genome sd"
 gEn = 0; repeat{
+  if((gEn %% 10) == 0){cat(date(),": run simulation",argv[3],"-",argv[5], "; generation =",gEn, "/",gEn.max, "(",round(gEn/gEn.max*100,2),"% )\n")}
   ## Population dynamics snapshot
   rec.host[gEn + 1,] = sim.df$host
   rec.transposon[gEn + 1,] = sim.df$transposon
@@ -75,17 +74,8 @@ gEn = 0; repeat{
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators
-  tPn.iDx = "transposon population size per genome sd"
   tPn.sums = lengths(tPn.list <- strsplit(sim.df$transposon, ";"))
   tPn.csum = cumsum(tPn.sums)
-  tPn.pRob = data.frame(
-    jump = rNumVec(
-      f = inFile$params$Value[inFile$params$Type==sub(" sd", " distribution", tPn.iDx)],
-      L = max(tPn.csum),
-      p1 = inFile$params$Value[inFile$params$Type==sub(" sd", " mean", tPn.iDx)],
-      p2 = inFile$params$Value[inFile$params$Type==tPn.iDx]
-      ),
-    land = rNumVec(f = "uniform", L = max(tPn.csum), p1 = 0, p2 = 1))
   for(i in 1:nrow(sim.df)){
 
   ### 2. Reconstruct transposon-inserted gene table
@@ -97,31 +87,21 @@ gEn = 0; repeat{
 
     if(tPn.sums[i] > 0){
   ### 3. Map indicators with transposon locations
-      i0 = tPn.pRob[(ifelse(i>1,tPn.csum[i-1],0)+1):tPn.csum[i],]
-      for(i1 in 1:nrow(i0)){
-        g.tmp = tPn.jump(
-          tPn.tag = tPn.list[[i]][i1],
-          tPn.prob = i0$land[i1],
-          tPn.size = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
-          gene.df = g.tmp,
-          tPn.move = i0$jump[i1],
-          generation = gEn,
-          hypothesis = sCene$jump,
-          genotoxic_Params = gPrm
-        )
-        tPn.list[[i]][i1] = strsplit(colnames(g.tmp)[1], ";")[[1]][1]
-        colnames(g.tmp)[1] = strsplit(colnames(g.tmp)[1], ";")[[1]][2]
-      };rm(i0,i1)
+      tPn.tag = tPn.io(sim.df$transposon[i])
+      for(i1 in 1:tPn.sums[i]){
+        if(class(tPn.tag)=="character"){
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag), gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = (gEn %in% perturbGen))
+        }else{
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,]), gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = (gEn %in% perturbGen))
+        }
+        tPn.list[[i]][i1] = tPn.get(g.tmp)
+        colnames(g.tmp)[1] = tPn.get(g.tmp, F)
+      };rm(i1)
 
   ### 4. Validate each transposon
       tPn.list[[i]] = tPn.r(tPn.list[[i]])
       if(length(tPn.list[[i]])>1){  for(i1 in 1:(length(tPn.list[[i]])-1)){ for(i2 in (i1+1):length(tPn.list[[i]])){
-          tPn.list[[i]][i1] = tPn.x(
-            tPn1 = tPn.list[[i]][i1],
-            tPn1.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
-            tPn2 = tPn.list[[i]][i2],
-            tPn2.len = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"])
-            )
+          tPn.list[[i]][i1] = tPn.x(tPn1 = tPn.list[[i]][i1], tPn2 = tPn.list[[i]][i2])
       }};rm(i1,i2) }
       # tPn.list[[i]] = tPn.r(paste0(tPn.list[[i]], collapse = ";"))
       sim.df$transposon[i] = paste0(tPn.list[[i]], collapse = ";")

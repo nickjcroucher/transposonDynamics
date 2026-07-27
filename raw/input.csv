@@ -12,7 +12,6 @@ transposon size in bp,1000,"high number indicates transposon insertion will have
 transposon population size per genome mean,5,high number indicates more transposons detected per genome
 transposon population size per genome sd,0,high number indicates more variation in transposon titre detected per genome
 transposon population size per genome distribution,poisson,uniform / normal / poisson / negbin
-transposon perturbation generation,100,
 percentage transposon perturbation genotoxic,0.1,
 percentage chance transposon perturbation boost,80,
 percentage amplitude transposon perturbation boost,150,
