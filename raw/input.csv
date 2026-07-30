@@ -7,7 +7,7 @@ percentage of fitness benefit with transposon,10,
 host organism constant generation number,500,
 host organism constant population size,500,
 host genome variation,3,any positive number
-host genetic variation,10,"1-62: 1 = homogeneous initial population; max 62 variations per gene; can specify variation for each gene using separator "";"""
+host genetic variation,10,"1-26: 1 = homogeneous initial population; max 62 variations per gene; can specify variation for each gene using separator "";"""
 transposon size in bp,1000,"high number indicates transposon insertion will have a bigger effect on the total host genome size; can specify variation for each gene using separator "";"""
 transposon population size per genome mean,5,high number indicates more transposons detected per genome
 transposon population size per genome sd,0,high number indicates more variation in transposon titre detected per genome

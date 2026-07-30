@@ -1,0 +1,89 @@
+name: R unit tests
+
+# Runs test-func.R and test-simulate.R (testthat suites for func.r / simulate.r)
+# on every push/PR, and on demand via the Actions tab.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      # Folder containing func.r, simulate.r, test-func.R and test-simulate.R.
+      # Both R scripts expect this folder to sit next to sibling "raw/" and
+      # "data/" folders, since they use relative paths like "../raw/input.csv"
+      # and "../data/<genome>.gff". ADJUST this path to match where those
+      # four files actually live in your repository (e.g. "code", "src", or
+      # "." if they're at the repo root and raw/data live one level up from
+      # there in your checkout).
+      SCRIPTS_DIR: src
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Install testthat
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          # Explicit `packages:` (not `extra-packages:`) because this repo
+          # has no DESCRIPTION file: the default `packages` value is
+          # `deps::., any::sessioninfo`, and `deps::.` needs a DESCRIPTION
+          # to resolve against. Setting `packages:` outright replaces that
+          # default instead of adding to it.
+          packages: any::testthat
+
+      # test-func.R / test-simulate.R print testthat's standard
+      # "[ FAIL n | WARN n | SKIP n | PASS n ]" summary line but (via
+      # with_reporter()) do not themselves turn a failing expectation into a
+      # non-zero exit code, by design -- that's what lets every test in the
+      # suite run even if an earlier one fails. So each step here checks
+      # both (a) the Rscript process's own exit status, in case the script
+      # crashed outright, and (b) the printed FAIL count, and fails the CI
+      # step if either indicates a problem.
+      - name: Run test-func.R
+        shell: bash
+        working-directory: ${{ env.SCRIPTS_DIR }}
+        run: |
+          set -o pipefail
+          Rscript test-func.R 2>&1 | tee test-func-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::error::test-func.R exited with status $status (it crashed before finishing)"
+            exit 1
+          fi
+          if grep -qE '\[ FAIL [1-9]' test-func-output.log; then
+            echo "::error::test-func.R reported one or more failing tests"
+            exit 1
+          fi
+
+      - name: Run test-simulate.R
+        shell: bash
+        working-directory: ${{ env.SCRIPTS_DIR }}
+        run: |
+          set -o pipefail
+          Rscript test-simulate.R 2>&1 | tee test-simulate-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "::error::test-simulate.R exited with status $status (it crashed before finishing)"
+            exit 1
+          fi
+          if grep -qE '\[ FAIL [1-9]' test-simulate-output.log; then
+            echo "::error::test-simulate.R reported one or more failing tests"
+            exit 1
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r-test-logs
+          path: |
+            ${{ env.SCRIPTS_DIR }}/test-func-output.log
+            ${{ env.SCRIPTS_DIR }}/test-simulate-output.log
+          if-no-files-found: ignore

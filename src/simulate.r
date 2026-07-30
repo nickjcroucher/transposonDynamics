@@ -4,7 +4,7 @@
 # desc: Discrete-time model for transposon ecology within one genome
 # in: Rscript simulate.r [../custom/loc/input.csv] [../custom/loc/seed.csv] [seed number] [../custom/loc/scenario.csv] [scenario number]
 # out: NA
-# arg: 1 (optional)
+# arg: 5 (optional)
 # date: 20260623
 
 argv=(commandArgs(T))
@@ -19,48 +19,50 @@ sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
 gPrm = c(toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage transposon perturbation genotoxic"])/100,
            boostProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage chance transposon perturbation boost"])/100,
            boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="percentage amplitude transposon perturbation boost"])/100)
-
-##### Initiate populations #####
-cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
-hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
-tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"], scenario = sCene)
-
-##### Initiate record dataframes #####
 gEn.max = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant generation number"])
 
 perturbGen = ceiling(rev(seq(1, gEn.max, gEn.max/(sCene$genotoxic+1))))-1
 perturbGen[perturbGen==0] = gEn.max + 1 # a numeric placeholder that can never achieve
 
+##### Initiate genomic variation in populations #####
+cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
+hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
+tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"], scenario = sCene)
+
+##### Initiate record dataframes #####
 rec.host = rec.transposon = rec.offspring = as.data.frame(matrix(NA, nrow = gEn.max + 1, ncol = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant population size"])))
 sim.df = as.data.frame(matrix(NA, nrow = ncol(rec.host), ncol = 3))
 colnames(sim.df) = c("host", "transposon", "familyTree")
 
 ##### Initial population #####
-sim.df$familyTree = sample(1:length(hOst), nrow(sim.df), replace = T)
-sim.df$host = hOst[sim.df$familyTree]
-for(i in 1:nrow(sim.df)){
-  tPn.loc = lOc = rNumVec(f = "uniform", L = inFile$transposon.titre[i], p1 = 0, p2 = 1)
-  tPn.tag = sample(tPn$ini, length(lOc), replace = T)
+## Genotypes
+if(sCene$cell=="haploid"){
+  fTree = matrix(rep(sample(1:length(hOst), nrow(sim.df), replace = T), 2), ncol = 2)
+}else{
+  fTree = matrix(sample(1:length(hOst), nrow(sim.df)*2, replace = T), ncol = 2)
+}
+sim.df$familyTree = paste(fTree[,1], fTree[,2], sep = ";")
+sim.df$host = paste(hOst[fTree[,1]], hOst[fTree[,2]], sep = ";")
 
-  ## Map transposons
-  for(i0 in 1:length(lOc)){
-    if(i0==1){g.tmp = as.data.frame(inFile$gene)}
-    g.tmp = tPn.act(tPn = tPn.tag[i0], gen = 0, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = F)
-    tPn.loc[i0] = tPn.get(g.tmp)
-    colnames(g.tmp)[1] = tPn.get(g.tmp, F)
-  };rm(i0, g.tmp)
-
-  ## Validate transposons
-  if(length(tPn.loc) > 1){for(i0 in 1:(length(tPn.loc)-1)){for(i1 in (i0+1):length(tPn.loc)){
-    tPn.loc[i0] = tPn.x(tPn1 = tPn.loc[i0], tPn2 = tPn.loc[i1])
-  }};rm(i0,i1)}
-  sim.df$transposon[i] = paste0(tPn.loc, collapse = ";")
-};rm(i, tPn.loc)
+## Transposons
+ini.tPn = data.frame(tpn = sample(tPn$ini, sum(inFile$transposon.titre), replace = T), loc = rNumVec(f = "uniform", L = sum(inFile$transposon.titre), p1 = 0, p2 = 1), host = rep(1:nrow(sim.df), inFile$transposon.titre), newLoc = NA)
+for(i in 1:nrow(ini.tPn)){
+  if(i>1){if(ini.tPn$host[i]!=ini.tPn$host[i-1]){g.tmp = inFile$gene}}else{g.tmp = inFile$gene}
+  g.tmp = tPn.reloc(ini.tPn$tpn[i], 0, g.tmp, ini.tPn$loc[i])
+  ini.tPn$newLoc[i] = tPn.get(g.tmp)
+  colnames(g.tmp)[1] = tPn.get(g.tmp,F)
+};for(i in 1:ncol(rec.transposon)){
+  g.tmp = which(ini.tPn$host==i)
+  if(length(g.tmp)>1){for(i0 in 1:(length(g.tmp)-1)){ for(i1 in (i0+1):length(g.tmp)){
+    ini.tPn$newLoc[i0] = tPn.x(ini.tPn$newLoc[i0], ini.tPn$newLoc[i1])
+  }}}
+  sim.df$transposon[i] = paste(ini.tPn$newLoc[which(ini.tPn$host==i)], collapse = ";")
+};rm(i,i0,i1,g.tmp)
 
 ##### Wright-Fisher / Neutral model run #####
 tPn.iDx = "transposon population size per genome sd"
 gEn = 0; repeat{
-  if((gEn %% 10) == 0){cat(date(),": run simulation",argv[3],"-",argv[5], "; generation =",gEn, "/",gEn.max, "(",round(gEn/gEn.max*100,2),"% )\n")}
+  if((gEn %% 50) == 0){cat(date(),": run simulation",argv[3],"-",argv[5], "; generation =",gEn, "/",gEn.max, "(",round(gEn/gEn.max*100,2),"% )\n")}
   ## Population dynamics snapshot
   rec.host[gEn + 1,] = sim.df$host
   rec.transposon[gEn + 1,] = sim.df$transposon
@@ -70,29 +72,28 @@ gEn = 0; repeat{
 #  cat(date(),": generation",gEn,"\n")
 
   ## Population reproduction stage
-  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, transposon.size = inFile$params$Value[inFile$params$Type=="transposon size in bp"], fitness.advantage = as.numeric(inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"]))
+  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, fitness.advantage = inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"], cell = sCene$cell)
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators
   tPn.sums = lengths(tPn.list <- strsplit(sim.df$transposon, ";"))
-  tPn.csum = cumsum(tPn.sums)
+  # sim.df0 = sim.df
   for(i in 1:nrow(sim.df)){
 
   ### 2. Reconstruct transposon-inserted gene table
-    g.tmp = reGeneDF(
-      tPn = sim.df$transposon[i],
-      tPn.size = as.numeric(inFile$params$Value[inFile$params$Type=="transposon size in bp"]),
-      gene.df = inFile$gene
-      )
+    g.tmp = reGeneDF(tPn = sim.df$transposon[i], gene.df = inFile$gene)
 
     if(tPn.sums[i] > 0){
   ### 3. Map indicators with transposon locations
       tPn.tag = tPn.io(sim.df$transposon[i])
+      if(class(tPn.tag)=="data.frame"){
+        tPn.tag$eq = paste0(substr(tPn.tag$gene,1,1), abs(as.numeric(substr(tPn.tag$gene,2,2))-1), substr(tPn.tag$gene,3,nchar(tPn.tag$gene)))
+      }
       for(i1 in 1:tPn.sums[i]){
         if(class(tPn.tag)=="character"){
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag), gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = (gEn %in% perturbGen))
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag), equivalent = F, gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }else{
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,]), gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = (gEn %in% perturbGen))
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-ncol(tPn.tag)]), equivalent = tPn.tag$eq[i1] %in% tPn.tag$gene, gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }
         tPn.list[[i]][i1] = tPn.get(g.tmp)
         colnames(g.tmp)[1] = tPn.get(g.tmp, F)
@@ -109,12 +110,9 @@ gEn = 0; repeat{
   };rm(i)
 
   ## Gene recombination stage (assume no transposons excise / add complications)
-  sim.df = g.Recom(
-    res.pool = sim.df,
-    gene.df = inFile$gene,
-    recomRate = sCene$gene[1]
-    )
-
+  # sim.df1 = sim.df
+  sim.df = g.Recom(res.pool = sim.df, gene.df = inFile$gene, recomRate = sCene$gene, hypothesis = sCene$recom)
+  # sim.df2 = sim.df
 }
 
 cat(date(),": printing warnings",argv[3],"-",argv[5],"\n")

@@ -16,7 +16,8 @@ pAr = list(
   copyDir = c("both", "terminus", "origin"),
   gene = c(10^-(1:4),0),
   recom = c("switch", "homeostatic"),
-  genotoxic = 0:4 # number of genotoxic events
+  genotoxic = 0:4, # number of genotoxic events
+  cell = c("haploid", "diploid")
 )
 
 a = data.frame(jumpRate = rep(tPn, each = length(jpH1)), jump = rep(jpH1, length(tPn)))
