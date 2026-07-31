@@ -104,10 +104,12 @@ gEn = 0; repeat{
       };rm(i1)
 
   ### 4. Validate each transposon
-      tPn.list[[i]] = tPn.r(tPn.list[[i]])
-      if(length(tPn.list[[i]])>1){  for(i1 in 1:(length(tPn.list[[i]])-1)){ for(i2 in (i1+1):length(tPn.list[[i]])){
+      if(length(tPn.list[[i]])>0){
+        tPn.list[[i]] = tPn.r(tPn.list[[i]])
+        if(length(tPn.list[[i]])>1){
+        for(i1 in 1:(length(tPn.list[[i]])-1)){ for(i2 in (i1+1):length(tPn.list[[i]])){
           tPn.list[[i]][i1] = tPn.x(tPn1 = tPn.list[[i]][i1], tPn2 = tPn.list[[i]][i2])
-      }};rm(i1,i2) }
+      }};rm(i1,i2) }}
       # tPn.list[[i]] = tPn.r(paste0(tPn.list[[i]], collapse = ";"))
       sim.df$transposon[i] = paste0(tPn.list[[i]], collapse = ";")
     }
