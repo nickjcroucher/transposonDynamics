@@ -15,19 +15,23 @@ cat(date(),": set environment",argv[3],"-",argv[5],"\n")
 source("func.r")
 set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
+
 sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
+tPn.0 = tPn.0[which(tPn.0$uniqID %in% strsplit(sCene$transposon, ";")[[1]]),] # allow multiple transposons in simulation
+host.0 = host.0[unique(sCene$host),]
+
 gPrm = c(toxicProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage transposon perturbation genotoxic"])/100,
            boostProb = as.numeric(inFile$params$Value[inFile$params$Type=="percentage chance transposon perturbation boost"])/100,
            boostCoef = as.numeric(inFile$params$Value[inFile$params$Type=="percentage amplitude transposon perturbation boost"])/100)
 gEn.max = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant generation number"])
 
-perturbGen = ceiling(rev(seq(1, gEn.max, gEn.max/(sCene$genotoxic+1))))-1
+perturbGen = ceiling(rev(seq(1, gEn.max, gEn.max/(host.0$genotoxic+1))))-1
 perturbGen[perturbGen==0] = gEn.max + 1 # a numeric placeholder that can never achieve
 
 ##### Initiate genomic variation in populations #####
 cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
 hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
-tPn = ini.transposon(inFile$params$Value[inFile$params$Type=="transposon size in bp"], scenario = sCene)
+tPn = data.frame(ini = strsplit(tPn.io(tPn.0), ";")[[1]], uniqID = tPn.0$uniqID, size = tPn.0$size)
 
 ##### Initiate record dataframes #####
 rec.host = rec.transposon = rec.offspring = as.data.frame(matrix(NA, nrow = gEn.max + 1, ncol = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant population size"])))
@@ -36,7 +40,7 @@ colnames(sim.df) = c("host", "transposon", "familyTree")
 
 ##### Initial population #####
 ## Genotypes
-if(sCene$cell=="haploid"){
+if(host.0$cell=="haploid"){
   fTree = matrix(rep(sample(1:length(hOst), nrow(sim.df), replace = T), 2), ncol = 2)
 }else{
   fTree = matrix(sample(1:length(hOst), nrow(sim.df)*2, replace = T), ncol = 2)
@@ -72,7 +76,7 @@ gEn = 0; repeat{
 #  cat(date(),": generation",gEn,"\n")
 
   ## Population reproduction stage
-  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, fitness.advantage = inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"], cell = sCene$cell)
+  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, fitness.advantage = inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"], cell = host.0$cell)
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators
@@ -91,9 +95,9 @@ gEn = 0; repeat{
       }
       for(i1 in 1:tPn.sums[i]){
         if(class(tPn.tag)=="character"){
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag), equivalent = F, gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = gEn %in% perturbGen)
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag), equivalent = F, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }else{
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-ncol(tPn.tag)]), equivalent = tPn.tag$eq[i1] %in% tPn.tag$gene, gen = gEn, gene.df = g.tmp, scenario = sCene, pAram = gPrm, gToxic = gEn %in% perturbGen)
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-ncol(tPn.tag)]), equivalent = tPn.tag$eq[i1] %in% tPn.tag$gene, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }
         tPn.list[[i]][i1] = tPn.get(g.tmp)
         colnames(g.tmp)[1] = tPn.get(g.tmp, F)
@@ -111,7 +115,7 @@ gEn = 0; repeat{
 
   ## Gene recombination stage (assume no transposons excise / add complications)
   # sim.df1 = sim.df
-  sim.df = g.Recom(res.pool = sim.df, gene.df = inFile$gene, recomRate = sCene$gene, hypothesis = sCene$recom)
+  sim.df = g.Recom(res.pool = sim.df, gene.df = inFile$gene, recomRate = host.0$recom, hypothesis = host.0$recomH1)
   # sim.df2 = sim.df
 }
 

@@ -7,23 +7,59 @@
 # arg: 0
 # date: 20260707,20260721
 
-##### Set simulation scenarios #####
-tPn = c(10^-(1:4),0)
-jpH1 = c("fixed", "charlesworth", "evolving")
+set.seed(1234)
+
+##### Set transposon simulation scenarios #####
+gEne = ""
+lOc = 0
 pAr = list(
+  generation = 0,
+  valid = T,
+  uniqID = "",
+  size = c(500,1000,1500,2000),
+  jumpRate = c(10^-(1:4),0),
+  jumpH1 = c("fixed", "charlesworth", "evolving"),
   copyRate = c(10^-(1:4),0),
-  copy = c("fixed", "charlesworth", "evolving"),
-  copyDir = c("both", "terminus", "origin"),
-  gene = c(10^-(1:4),0),
-  recom = c("switch", "homeostatic"),
-  genotoxic = 0:4, # number of genotoxic events
-  cell = c("haploid", "diploid")
+  copyH1 = c("fixed", "charlesworth", "evolving"),
+  copyDir = c("both", "terminus", "origin")
 )
 
-a = data.frame(jumpRate = rep(tPn, each = length(jpH1)), jump = rep(jpH1, length(tPn)))
+a = data.frame(gene = rep(gEne, each = length(lOc)), location = rep(lOc, length(gEne)))
 for(i in 1:length(pAr)){
   a = cbind(a, rep(pAr[[i]], each = nrow(a)))
 };rm(i)
 
 colnames(a)[-(1:2)] = names(pAr)
-write.csv(a, "../raw/scenario.csv", row.names = F, quote = F)
+
+## Set transposon uniqID
+uID.len = ceiling(log(nrow(a))/log(length(LETTERS)))
+repeat{
+  uID = unique(as.data.frame(matrix(sample(LETTERS, nrow(a)*(uID.len+1), replace = T), ncol = uID.len+1)))
+  if(nrow(uID) >= nrow(a)){break}
+}
+a$uniqID = apply(uID,1,paste0, collapse = "")[1:nrow(a)]
+
+write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)
+
+##### Set cell simulation scenarios #####
+rEcom = c(10^-(1:4),0)
+rEcH1 = c("switch", "homeostatic")
+pAr = list(
+  cell = c("haploid", "diploid"),
+  genotoxic = 0:4 # number of genotoxic events
+)
+
+a0 = data.frame(recom = rep(rEcom, each = length(rEcH1)), recomH1 = rep(rEcH1, length(rEcom)))
+for(i in 1:length(pAr)){
+  a0 = cbind(a0, rep(pAr[[i]], each = nrow(a0)))
+};rm(i)
+
+colnames(a0)[-(1:2)] = names(pAr)
+write.csv(a0, "../raw/template-host.csv", row.names = F, quote = F)
+
+##### Set overall scenario to do simulation #####
+tPn = a$uniqID[which(a$size == 1000 & a$jumpH1 == "fixed" & a$copyH1 == "fixed" & a$copyDir == "both")]
+hOst = row.names(a0)[which(a0$recomH1 == "switch" & a0$cell == "haploid")]
+
+res = data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
+write.csv(res, "../raw/scenario.csv", row.names = F, quote = F)

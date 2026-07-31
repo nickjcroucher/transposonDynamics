@@ -8,7 +8,8 @@
 # date: 20260623
 
 ##### Constants #####
-tPn.0 = read.csv("../raw/tpn-template.csv", header = T)
+tPn.0 = read.csv("../raw/template-tpn.csv", header = T)
+host.0 = read.csv("../raw/template-host.csv", header = T)
 
 ##### Reorganize GFF file information #####
 gffClean = function(gFf){
@@ -91,21 +92,6 @@ ini.host = function(host.var, gene.df, gene.var){
   hOst[rEcessive] = tolower(hOst[rEcessive])
   hOst.compact = apply(hOst, 1, function(x){paste0(x, collapse = "")})
   return(hOst.compact)
-}
-
-##### Initiate transposon pool #####
-ini.transposon = function(tPn.size, scenario, template = tPn.0){
-  if(length(grep(";",tPn.size))>0){tPn.size = strsplit(tPn.size, ";")[[1]]}
-  tPn.size = as.numeric(tPn.size)
-  tPn.wide = as.data.frame(matrix(0, nrow = length(tPn.size), ncol = ncol(template)))
-  tPn.tmp = matrix(sample(LETTERS, length(tPn.size)*7, replace = T), nrow = length(tPn.size), ncol = 7)
-  tPn.wide[,1] = ""
-  tPn.wide[,4] = T
-  tPn.wide[,5] = apply(tPn.tmp, 1, function(x){paste0(x, collapse = "")})
-  tPn.wide[,6] = tPn.size
-  tPn.wide[,7] = scenario$jumpRate
-  tPn.wide[,8] = scenario$copyRate
-  return(data.frame(ini = apply(tPn.wide, 1, function(x){paste0(x, collapse = "!")}), uniqID = tPn.wide[,5], size = tPn.size))
 }
 
 ##### Rescale random number #####
@@ -268,8 +254,8 @@ sCene.mod = function(pRobs, tPn.bg, sCene, pAram, gToxic = F){
   tPn.bg = length(strsplit(tPn.bg, ";")[[1]])
   gTx = runif(2) < pAram[1:2]
   x = c(
-    h1.mod(pRobs[1], tPn.bg, sCene[2], ifelse(gToxic, ifelse(gTx[1], 0, ifelse(gTx[2], pAram[3], 1)),1)), # jump
-    h1.mod(pRobs[2], tPn.bg, sCene[4], 1) # copy is not affected by genotoxic effect
+    h1.mod(pRobs[1], tPn.bg, sCene[1], ifelse(gToxic, ifelse(gTx[1], 0, ifelse(gTx[2], pAram[3], 1)),1)), # jump
+    h1.mod(pRobs[2], tPn.bg, sCene[2], 1) # copy is not affected by genotoxic effect
   )
   return(x[c(1,3,2,4)])
 }
@@ -284,10 +270,10 @@ tPn.get = function(gene.df, transposon = T){
 }
 
 ##### Single transposon action: jump and/or copy or neither? #####
-tPn.act = function(tPn, equivalent, gen, gene.df, scenario, pAram, gToxic = F){ # gene.df must have all transposons attached
-  x = tPn.io(tPn); x0 = tPn
-  x.probs = sCene.mod(pRobs = as.numeric(x[c("jump", "copy")]), tPn.bg = tPn.get(gene.df), sCene = scenario, pAram = pAram, gToxic = gToxic)
-  x[c("jump", "copy")] = x.probs[3:4]
+tPn.act = function(tPn, equivalent, gen, gene.df, pAram, gToxic = F){ # gene.df must have all transposons attached
+  x = tPn.io(tPn); x0 = tPn.io(tPn.io(tPn))
+  x.probs = sCene.mod(pRobs = as.numeric(x[c("jumpRate", "copyRate")]), tPn.bg = tPn.get(gene.df), sCene = x[c("jumpH1", "copyH1")], pAram = pAram, gToxic = gToxic)
+  x[c("jumpRate", "copyRate")] = x.probs[3:4]
   a = c(rNumVec(f = "uniform", L = 2, p1 = 0, p2 = 1) < x.probs[1:2], max(1, rpois(1, rnorm(1, 1, .01)))) # jump?, copy?, num copies
   a[1] = ifelse(gen > 0,a[1],1);a[2] = ifelse(gen > 0,a[2],0)
   colnames(gene.df)[1] = tPn.get(gene.df, F)
@@ -304,9 +290,9 @@ tPn.act = function(tPn, equivalent, gen, gene.df, scenario, pAram, gToxic = F){ 
       gene.df = tPn.reloc(tPn, gen, gene.df)
       tTpn = c(tPn, tPn.get(gene.df))
       tCheck = abs(unlist(apply(tPn.io(paste(tTpn, collapse = ";")), 1, function(x){which(gene.df[,1]==substr(x[1], 2, nchar(x[1])))})) - nrow(gene.df)/2)
-      if(scenario$copyDir == "terminus"){ # assume transposon is not quick enough to copy into the adjacent intragenic-gene pair
+      if(x["copyDir"] == "terminus"){ # assume transposon is not quick enough to copy into the adjacent intragenic-gene pair
         cpValid = tCheck[2] < tCheck[1]
-      }else if(scenario$copyDir == "origin"){
+      }else if(x["copyDir"] == "origin"){
         cpValid = tCheck[2] > tCheck[1]
       }else{ cpValid = T }
       if(cpValid){

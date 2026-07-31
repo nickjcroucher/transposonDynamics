@@ -13,7 +13,7 @@
 # BSUB -q week
 # BSUB -M 4000
 # BSUB -R "select[mem>4000] rusage[mem=4000] span[hosts=1]"
-# BSUB -J "tdy[1-3600]"
+# BSUB -J "tdy[1-6250]"
 
 PATH="/software/isg/private/wrappers/apptainer/1.4.0:$PATH"
 
