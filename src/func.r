@@ -193,8 +193,8 @@ host.reproduce = function(res.pool, gene.df, fitness.advantage, cell = "haploid"
 tPn.x = function(tPn1, tPn2){
   t1 = tPn.io(tPn1); t2 = tPn.io(tPn2)
   if(t1[1] == t2[1]){
-    t1.span = as.numeric(t1[2])*(1:as.numeric(t1[6])); t2.span = as.numeric(t2[2])*(1:as.numeric(t2[6]))
-    if(as.logical(t1[4]) & any(t2.span %in% t1.span)){ # tPn1 assume always insert earlier than tPn2
+    t1.span = as.numeric(t1[2])+(1:as.numeric(t1[6]))-1
+    if(as.logical(t1[4]) & (as.numeric(t1[2]) < as.numeric(t2[2])) & (as.numeric(t2[2]) %in% t1.span)){ # tPn1 assume always insert earlier than tPn2
       t1[4] = F
       return(tPn.io(t1))
   }}
