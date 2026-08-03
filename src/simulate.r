@@ -8,11 +8,12 @@
 # date: 20260623
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "2", "../raw/scenario.csv", "256")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")}
 
 ##### env set #####
 cat(date(),": set environment",argv[3],"-",argv[5],"\n")
 source("func.r")
+source("func_analysis.r")
 set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
 
@@ -127,4 +128,10 @@ print(warnings())
 ##### Simulation record export #####
 cat(date(),": result export",argv[3],"-",argv[5],"\n")
 save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
-cat(date(),": simulation completed",argv[3],"-",argv[5],"\n")
+
+##### Run analysis #####
+cat(date(),": analysis started",argv[3],"-",argv[5],"\n")
+gEnealogy = fAmily(rec.offspring)/ncol(rec.offspring)
+rec.tpn = tpn.gen(rec.transposon)
+save(gEnealogy, rec.tpn, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+cat(date(),": simulation and analysis completed",argv[3],"-",argv[5],"\n")

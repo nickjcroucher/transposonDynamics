@@ -33,7 +33,7 @@ f.tpn = read.csv(p.file[grep("template-tpn", p.file)[1]], header = T)
 ##### Set data collection structure templates #####
 #options(warn = 2)
 #set.seed(1234)
-load(f.rda$file[1])
+s1 = simLoad(f.rda$file[1])
 
 r.res0 = as.data.frame(matrix(nrow = nrow(rec.transposon)*nrow(f.sce), ncol = max(f.rda$rep))) # overall result dataframe
 r.res = cbind(f.sce, r.res0[,1:2]); r.res[,(-1:0)+ncol(r.res)] = NULL
