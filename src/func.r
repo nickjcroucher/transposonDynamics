@@ -300,8 +300,8 @@ tPn.act = function(tPn, equivalent, gen, gene.df, pAram, gToxic = F){ # gene.df 
       }
       colnames(gene.df)[1] = tPn.get(gene.df, F)
       }}
-    colnames(gene.df)[1] = paste0(c(x0, colnames(gene.df)[1]), collapse = ";")
-  }
+  }else{x0 = tPn}
+  colnames(gene.df)[1] = paste0(c(x0, colnames(gene.df)[1]), collapse = ";")
   return(gene.df)
 }
 

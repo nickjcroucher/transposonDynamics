@@ -8,7 +8,7 @@
 # date: 20260623
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "7")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "2", "../raw/scenario.csv", "256")}
 
 ##### env set #####
 cat(date(),": set environment",argv[3],"-",argv[5],"\n")

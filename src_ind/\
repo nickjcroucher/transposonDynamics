@@ -24,21 +24,20 @@ f.rda = read.table(text = sub("[.]", "_", read.table(text = a.rDa, sep = "-")[,3
 colnames(f.rda) = c("rep", "sce")
 f.rda$file = a.rDa;rm(a.rDa)
 f.sce = read.csv(p.file[grep("scenario", p.file)[1]], header = T)
-f.hos = read.csv(p.file[grep("template-host", p.file)[1]], header = T)
-f.tpn = read.csv(p.file[grep("template-tpn", p.file)[1]], header = T)
-#f.sce$paste = apply(f.sce, 1, function(x){paste0(x, collapse = "")})
-#f.rda = cbind(f.rda, f.sce[f.rda$sce,])
-#f.rda$hypothesis = apply(f.rda, 1, function(x){paste0(x[6:7], collapse = "")})
+f.sce$paste = apply(f.sce, 1, function(x){paste0(x, collapse = "")})
+f.rda = cbind(f.rda, f.sce[f.rda$sce,])
+f.rda$hypothesis = apply(f.rda, 1, function(x){paste0(x[6:7], collapse = "")})
 
 ##### Set data collection structure templates #####
 #options(warn = 2)
-#set.seed(1234)
+set.seed(1234)
 load(f.rda$file[1])
 
-r.res0 = as.data.frame(matrix(nrow = nrow(rec.transposon)*nrow(f.sce), ncol = max(f.rda$rep))) # overall result dataframe
-r.res = cbind(f.sce, r.res0[,1:2]); r.res[,(-1:0)+ncol(r.res)] = NULL
+r.res0 = as.data.frame(matrix(nrow = nrow(rec.transposon)*nrow(f.sce), ncol = 2))
+r.res = cbind(f.sce, r.res0); r.res[,(-1:0)+ncol(r.res)] = NULL
 r.res$generation = rep((1:nrow(rec.transposon))-1, each = nrow(f.sce))
-#r.res$hypothesis = paste0(r.res$jump,r.res$recom)
+r.res$hypothesis = paste0(r.res$jump,r.res$recom)
+r.res0 = as.data.frame(matrix(nrow = nrow(rec.transposon)*nrow(f.sce), ncol = max(f.rda$rep)))
 
 cat(date(), ": collecting individualized resolution data\n")
 
