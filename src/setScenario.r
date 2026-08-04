@@ -46,6 +46,7 @@ rEcom = c(10^-(1:4),0)
 rEcH1 = c("switch", "homeostatic")
 pAr = list(
   cell = c("haploid", "diploid"),
+  transposonEffect = c(T,F),
   genotoxic = 0:4 # number of genotoxic events
 )
 

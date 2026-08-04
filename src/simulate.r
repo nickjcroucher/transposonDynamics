@@ -77,7 +77,7 @@ gEn = 0; repeat{
 #  cat(date(),": generation",gEn,"\n")
 
   ## Population reproduction stage
-  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, fitness.advantage = inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"], cell = host.0$cell)
+  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, fitness.advantage = inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"], cell = host.0$cell, transposonEffect = host.0$transposonEffect)
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators

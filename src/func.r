@@ -139,7 +139,7 @@ reGeneDF = function(tPn, gene.df){
 }
 
 ##### New host population #####
-host.reproduce = function(res.pool, gene.df, fitness.advantage, cell = "haploid"){
+host.reproduce = function(res.pool, gene.df, fitness.advantage, cell = "haploid", transposonEffect = F){
   # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
   ## Calculate ecological fitness deficit
   fitness.advantage = as.numeric(fitness.advantage)
@@ -148,7 +148,7 @@ host.reproduce = function(res.pool, gene.df, fitness.advantage, cell = "haploid"
     t.tmp = tPn.io(res.pool$transposon[i])
     t.tmp$nonessential = as.numeric(!(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$essential])))
     t.tmp$advantage = fitness.advantage/100 * as.numeric(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$advantage]))
-    t.tmp$sizeeff = t.tmp$size/sum(gene.df$length + gene.df$interLength)*-2
+    t.tmp$sizeeff = ifelse(transposonEffect, t.tmp$size/sum(gene.df$length + gene.df$interLength)*-2, 0)
     g0 = substr(t.tmp$gene,2,2)==0
 
     if(sum(g0)>0){
