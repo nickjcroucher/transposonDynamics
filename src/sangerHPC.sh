@@ -13,6 +13,8 @@ mkdir -p ../data
 
 [[ -f transposondynamics_latest.sif ]] && rm transposondynamics_latest.sif && apptainer pull docker://ghcr.io/nickjcroucher/transposondynamics:latest
 
-bsub < sangerHPC_child.sh
+sed -e "s/mAx/$(( `wc -l < ../data/rerun.csv` ))/" sangerHPC_child.sh > sC.sh
+
+bsub < sC.sh
 
 exit
