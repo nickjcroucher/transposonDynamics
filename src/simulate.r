@@ -129,9 +129,5 @@ print(warnings())
 cat(date(),": result export",argv[3],"-",argv[5],"\n")
 save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
 
-##### Run analysis #####
-cat(date(),": analysis started",argv[3],"-",argv[5],"\n")
-gEnealogy = fAmily(rec.offspring)/ncol(rec.offspring)
-rec.tpn = tpn.gen(rec.transposon)
-save(gEnealogy, rec.tpn, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
-cat(date(),": simulation and analysis completed",argv[3],"-",argv[5],"\n")
+##### Simulation summary #####
+source("sim_summary.r")
