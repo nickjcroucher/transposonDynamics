@@ -5,70 +5,80 @@
 # in:  Rscript test-simulate.R      (run from the SAME directory as simulate.r/func.r)
 # out: console test report (testthat "summary" reporter)
 # arg: NA
-# date: 20260731
+# date: 20260811
 #
 # NOTES FOR THE USER
 # -------------------
 # * simulate.r is a top-level SCRIPT driven by commandArgs(), not a set of
 #   functions -- it cannot be "unit tested" in the usual sense without
-#   amending it (which was explicitly ruled out). This file instead:
-#     (1) runs simulate.r end-to-end, unchanged, as a subprocess against tiny
-#         synthetic fixtures (a real integration/smoke test), and
-#     (2) statically checks simulate.r's own source text for a couple of
-#         specific, previously-identified inconsistencies that a smoke test
-#         alone would not reliably surface.
-#   Static/source-text checks are clearly labelled below.
-# * Self-contained: builds its own tiny synthetic fixtures in a temp
-#   directory mirroring the "code/ + ../raw/ + ../data/" layout both scripts
-#   expect, and never touches your real ../raw or ../data folders.
-# * This is the THIRD revision of this suite. This revision's simulate.r
-#   reworks how a scenario is resolved: scenario.csv no longer carries any
-#   rate/hypothesis columns itself -- it now has just two columns,
-#   `transposon` and `host`, that PICK one transposon (by uniqID) out of
-#   template-tpn.csv and one row (by position) out of the new template-
-#   host.csv. Concretely:
-#     tPn.0  = tPn.0[which(tPn.0$uniqID %in% sCene$transposon), ]   # by uniqID (value match)
-#     host.0 = host.0[unique(sCene$host), ]                          # by row number (position match)
-#   template-host.csv (recom, recomH1, cell, genotoxic) replaces the old
-#   scenario.csv's cell/genotoxic/gene/recom columns; host.0$cell/$genotoxic/
-#   $recom/$recomH1 are used everywhere those used to be sCene$cell/etc.
-#   Fixture files below were rebuilt to this schema, confirmed directly
-#   against the three uploaded CSVs (not inferred from code alone).
-# * REGRESSION (this revision): the previous revision's fix for the
-#   progress-print throttle -- changed from the tautological
-#   `(gEn %% 1) == 0` to a genuine `(gEn %% 50) == 0` -- has been REVERTED.
-#   This revision's simulate.r is back to `(gEn %% 1) == 0`. It is purely
-#   cosmetic (console log verbosity only, no effect on simulation
-#   correctness), but is flagged clearly below since it was previously
-#   reported fixed and has now reappeared -- worth checking this wasn't an
-#   accidental revert (e.g. an older snippet pasted back in) if that
-#   throttle was intentionally wanted.
-# * NEW FINDING (this revision): the host.0 selection line above
-#   (`host.0[unique(sCene$host), ]`) selects by raw ROW POSITION, unlike the
-#   transposon selection line right above it, which selects by uniqID VALUE
-#   match. template-host.csv (unlike template-tpn.csv) carries no ID column
-#   at all, so scenario.csv's "host" column IS a bare row number into it.
-#   This is a fresh asymmetry introduced by this revision's host.0/template-
-#   host.csv split (it did not exist before, since there was no host.0
-#   previously) -- reordering, inserting, or deleting any row in template-
-#   host.csv would silently repoint every scenario.csv "host" value at a
-#   different row, with no error or ID check to catch it, whereas the
-#   equivalent transposon mistake can't happen by construction. It may well
-#   be an accepted convention given both catalogs look like static, append-
-#   only outputs of a combinatorial generator (confirmed against the
-#   uploaded template-tpn.csv/template-host.csv row counts and value
-#   patterns) -- flagged as a consequence worth the user's awareness, not a
-#   claim about intent.
+#   amending it (which was explicitly ruled out). This file instead runs
+#   simulate.r end-to-end, unchanged, as a subprocess against tiny synthetic
+#   fixtures (a real integration/smoke test), and separately checks
+#   simulate.r's own source text for specific, previously-identified points.
+# * This is the FOURTH revision of this suite. Per the user's explicit
+#   instruction this time, the new `source("sim_summary.r")` line at the
+#   very end of simulate.r is IGNORED (not stubbed, not checked -- it simply
+#   isn't reached by anything this suite verifies, since it runs after the
+#   .rda export this suite already checks for).
+# * NOT explicitly excluded, but newly present: a `source("func_analysis.r")`
+#   call right after `source("func.r")`, near the top of simulate.r, BEFORE
+#   any of the logic this suite exercises. Its contents were not provided.
+#   Since simulate.r sources it unconditionally with no existence guard,
+#   leaving it out entirely would make the smoke test fail for a reason
+#   having nothing to do with simulate.r's own logic (a missing file, not a
+#   real bug). This suite creates an EMPTY placeholder file for it -- sourcing
+#   an empty file is a harmless no-op in R. This is an assumption, not a
+#   confirmed fact about func_analysis.r's real contents: if the real file
+#   defines something actually called later in the generational loop (this
+#   suite found no such call in the code it inspected, so this seems
+#   unlikely, but can't be ruled out from source alone), the smoke test may
+#   need the real file rather than this stub. Flagged here rather than
+#   silently assumed away.
+# * Schema changes this revision, confirmed directly against func.r/
+#   simulate.r's own source:
+#     - func.r's inParams() now reads a new external "gene fitness" CSV
+#       (locus_tag,fitness) instead of the old boolean essential/advantage
+#       Type rows -- this suite's input.csv/gene-fitness.csv fixtures were
+#       updated to match (mirrors test-func.R's fixture exactly).
+#     - simulate.r's host.reproduce() call now passes
+#       `transposonEffect = host.0$transposonEffect`, and its tPn.act() call
+#       now passes `equivalent = ifelse(host.0$homologousAutoRecom, ...,
+#       F)` -- BOTH read off host.0, meaning template-host.csv needs two
+#       MORE columns than previously confirmed. Unlike this suite's other
+#       template-host.csv columns (recom, recomH1, cell, genotoxic, all
+#       confirmed against an uploaded file in an earlier revision),
+#       transposonEffect/homologousAutoRecom are INFERRED PURELY FROM CODE
+#       USAGE this time -- no fresh template-host.csv was provided alongside
+#       this revision's func.r/simulate.r. Flagged explicitly rather than
+#       presented as confirmed.
+#     - scenario.csv's `transposon` column can now hold MULTIPLE ";"-joined
+#       uniqIDs per row (`tPn.0[which(tPn.0$uniqID %in%
+#       strsplit(sCene$transposon,";")[[1]]),]`). This suite's smoke test
+#       fixture now deliberately selects two transposons in one scenario row
+#       to exercise that path end-to-end (see fixture section below).
+# * RESOLVED this revision (previously flagged, now confirmed fixed):
+#     - The progress-print throttle is back to `(gEn %% 50) == 0` -- last
+#       revision had reverted it to the tautological `(gEn %% 1) == 0`;
+#       that regression is gone again.
+#     - The tPn-catalog build now reads
+#       `tPn = data.frame(ini = strsplit(tPn.io(tPn.0), ";")[[1]], ...)`
+#       instead of `tPn.io(tPn.0)` directly -- this is exactly the fix for
+#       last revision's [FINDING] about tPn.io()'s data.frame branch
+#       collapsing multiple rows into one string (see test-func.R for the
+#       direct demonstration; this file adds a quick source-text
+#       confirmation that the real call site was actually changed).
+# * STILL PRESENT (unchanged, flagged again): host.0 continues to be
+#   selected by raw row position (`host.0[unique(sCene$host),]`) while
+#   transposon selection is by uniqID value match (and, this revision, can
+#   match several). See the dedicated test below.
 # * IMPORTANT DISCLOSURE: authored and hand-traced line by line against
-#   simulate.r's source (and the actual uploaded scenario.csv/template-
-#   tpn.csv/template-host.csv, whose schemas were read directly), but could
-#   NOT be executed in the authoring sandbox (no R interpreter available
-#   there, no network access to install one). The `perturbGen` formula test
-#   below WAS independently verified arithmetically (by hand-replicating R's
-#   seq()/ceiling() semantics), not just re-derived from the source -- see
-#   its comments for what that verification found. Please run this suite
-#   yourself and treat the first run as a shakedown -- fix-forward on any
-#   fixture mismatch rather than assuming the underlying analysis is wrong.
+#   simulate.r's source (and the schemas confirmed in earlier revisions
+#   against the actual uploaded CSVs), but could NOT be executed in the
+#   authoring sandbox (no R interpreter available there, no network access
+#   to install one). Please run this suite yourself and treat the first run
+#   as a shakedown -- the func_analysis.r stub and the two inferred
+#   template-host.csv columns noted above are the most likely sources of a
+#   first-run mismatch that would NOT indicate a real bug in simulate.r.
 
 if (!requireNamespace("testthat", quietly = TRUE)) {
   stop("Package 'testthat' is required.\nInstall it with: install.packages('testthat')")
@@ -117,27 +127,37 @@ dir.create(file.path(tmp_root, "data"), recursive = TRUE)
 file.copy(FUNC_R_PATH, file.path(tmp_root, "code", "func.r"), overwrite = TRUE)
 file.copy(SIMULATE_R_PATH, file.path(tmp_root, "code", "simulate.r"), overwrite = TRUE)
 
-## -- template-tpn.csv: schema (11 columns) confirmed directly against the
-##    uploaded file. Two distinct transposon "types" so scenario.csv's
-##    uniqID-based selection is meaningfully exercised (not just trivially
-##    the only row available).
+## -- func_analysis.r: NOT provided this revision; empty placeholder so
+##    simulate.r's unconditional `source("func_analysis.r")` doesn't error
+##    out on a missing file. See header disclosure above.
+writeLines(
+  c("# empty placeholder written by test-simulate.R -- the real func_analysis.r",
+    "# was not provided; see this suite's header comment for why."),
+  file.path(tmp_root, "code", "func_analysis.r")
+)
+
+## -- template-tpn.csv: schema (11 columns) unchanged this revision. Two
+##    distinct transposon "types" so scenario.csv's multi-uniqID selection
+##    (new this revision) is genuinely exercised end-to-end, not just
+##    trivially the only row available.
 writeLines(c(
   "gene,location,generation,valid,uniqID,size,jumpRate,jumpH1,copyRate,copyH1,copyDir",
   ",0,0,TRUE,TEST,50,0.1,fixed,0.1,fixed,both",
   ",0,0,TRUE,DEMO,50,0.05,evolving,0.05,charlesworth,terminus"
 ), file.path(tmp_root, "raw", "template-tpn.csv"))
 
-## -- template-host.csv: schema (4 columns) confirmed directly against the
-##    uploaded file. Two rows so scenario.csv's positional host selection is
-##    meaningfully exercised (row 2, not just the default row 1). genotoxic
-##    is kept at 0 for the row the smoke test actually selects, purely to
-##    keep the end-to-end run fully deterministic (see the perturbGen
-##    section below for why non-zero genotoxic interacts with small
-##    generation counts in a way worth testing separately, not smoke-testing).
+## -- template-host.csv: recom/recomH1/cell/genotoxic confirmed in an
+##    earlier revision against the uploaded file; transposonEffect and
+##    homologousAutoRecom are NEW columns this revision, INFERRED from code
+##    usage only (see header disclosure -- no fresh file was uploaded this
+##    time). Both set FALSE for the row the smoke test selects, to keep the
+##    end-to-end run fully deterministic and avoid exercising those two
+##    switches' internal randomness/branches in what's meant to be a fast
+##    plumbing check (they're unit-tested directly in test-func.R instead).
 writeLines(c(
-  "recom,recomH1,cell,genotoxic",
-  "0.1,switch,haploid,1",
-  "0.05,switch,haploid,0"
+  "recom,recomH1,cell,genotoxic,transposonEffect,homologousAutoRecom",
+  "0.1,switch,haploid,1,FALSE,FALSE",
+  "0.05,switch,haploid,0,FALSE,FALSE"
 ), file.path(tmp_root, "raw", "template-host.csv"))
 
 gff_lines <- c(
@@ -149,15 +169,24 @@ gff_lines <- c(
 )
 writeLines(gff_lines, file.path(tmp_root, "data", "genome.gff"))
 
-## NOTE: "transposon size in bp" is dropped from this fixture -- as of this
-## revision it is no longer read anywhere (transposon sizes come from
-## template-tpn.csv's own `size` column instead).
+## -- gene-fitness.csv: NEW this revision, mirrors test-func.R's fixture
+##    exactly (geneC deliberately omitted -> exercises the NA -> 0 fallback).
+writeLines(c(
+  "locus_tag,fitness",
+  "geneA,0",
+  "geneB,1",
+  "geneD,2"
+), file.path(tmp_root, "raw", "gene-fitness.csv"))
+
+## "essential genes" / "genes for fitness advantage" dropped -- superseded
+## by "gene fitness" above (both corresponding func.r lines are commented
+## out this revision). "transposon size in bp" remains dropped from an
+## earlier revision (still unused).
 input_csv <- c(
   "Type,Value",
   "ref genome,genome.fasta",
-  "essential genes,geneA",
+  "gene fitness,../raw/gene-fitness.csv",
   "genes for recombination mechanism,geneC",
-  "genes for fitness advantage,geneD",
   "transposon population size per genome distribution,poisson",
   "transposon population size per genome mean,2",
   "transposon population size per genome sd,2",
@@ -167,21 +196,22 @@ input_csv <- c(
   "host organism constant generation number,2",
   "percentage transposon perturbation genotoxic,1",
   "percentage chance transposon perturbation boost,10",
-  "percentage amplitude transposon perturbation boost,5",
-  "percentage of fitness benefit with transposon,2"
+  "percentage amplitude transposon perturbation boost,5"
 )
 writeLines(input_csv, file.path(tmp_root, "raw", "input.csv"))
 
 ## seed.csv: no header, one integer seed per row (argv[3] indexes into this)
 writeLines(as.character(c(101, 202, 303)), file.path(tmp_root, "raw", "seed.csv"))
 
-## scenario.csv: header=TRUE, schema (transposon,host) confirmed directly
-## against the uploaded file. Row 1 picks transposon uniqID "DEMO" and host
-## row 2 (recom=0.05, cell=haploid, genotoxic=0) -- row 2 specifically (not
-## row 1) so the positional host lookup is genuinely exercised.
+## scenario.csv: header=TRUE, schema (transposon,host) unchanged this
+## revision. Row 1 now selects BOTH transposons ("TEST;DEMO") to exercise
+## the new multi-uniqID selection path end-to-end, and host row 2
+## (recom=0.05, cell=haploid, genotoxic=0, transposonEffect=FALSE,
+## homologousAutoRecom=FALSE) -- row 2 specifically (not row 1) so the
+## positional host lookup is genuinely exercised.
 writeLines(c(
   "transposon,host",
-  "DEMO,2"
+  "TEST;DEMO,2"
 ), file.path(tmp_root, "raw", "scenario.csv"))
 
 ## ------------------------------------------------------------------------
@@ -209,12 +239,15 @@ run_simulate <- function(seed_idx = "1", scenario_idx = "1") {
 ## ==========================================================================
 invisible(with_reporter("summary", start_end_reporter = TRUE, {
 
-test_that("simulate.r runs end-to-end on tiny fixtures and writes a well-formed .rda", {
+test_that("simulate.r runs end-to-end on tiny fixtures (incl. a multi-transposon scenario row) and writes a well-formed .rda", {
   res <- run_simulate(seed_idx = "1", scenario_idx = "1")
   if (!identical(res$status, 0L)) {
     cat("\n---- simulate.r stdout/stderr (see below for where it failed) ----\n")
     cat(paste(res$output, collapse = "\n"), "\n")
     cat("-------------------------------------------------------------------\n")
+    cat("NOTE: if this failure mentions func_analysis.r or a column named\n",
+        "transposonEffect/homologousAutoRecom, see this file's header comment\n",
+        "-- both are assumption-based fixtures this suite had to infer.\n", sep = "")
   }
   expect_equal(res$status, 0L)
 
@@ -242,78 +275,58 @@ test_that("simulate.r runs end-to-end on tiny fixtures and writes a well-formed 
 simulate_src <- readLines(SIMULATE_R_PATH, warn = FALSE)
 simulate_txt <- paste(simulate_src, collapse = "\n")
 
-test_that("both the initial-population branch and the per-generation reproduction step read cell from host.0", {
-  ## This revision moved `cell` from the old scenario.csv (sCene$cell) to
-  ## the new template-host.csv (host.0$cell) at BOTH call sites: the initial
-  ## population's haploid/diploid branch, and the main loop's
-  ## host.reproduce() call. Checked directly against the source, and (since
-  ## this is a rename rather than a fresh fix) confirming neither call site
-  ## regressed back to a hardcoded "haploid" literal or the old sCene$cell.
-  init_branch <- grep('host\\.0\\$cell\\s*==\\s*"haploid"', simulate_src, value = TRUE)
-  expect_equal(length(init_branch), 1)
-
+test_that("host.reproduce() is called with the new transposonEffect argument, not the old fitness.advantage", {
   reproduce_calls <- grep("host\\.reproduce\\(", simulate_src, value = TRUE)
-  expect_equal(length(reproduce_calls), 1)  # exactly one call site in the main loop
+  expect_equal(length(reproduce_calls), 1)
   if (length(reproduce_calls) == 1) {
     expect_true(grepl('cell\\s*=\\s*host\\.0\\$cell', reproduce_calls))
-    expect_false(grepl('cell\\s*=\\s*"haploid"', reproduce_calls))
-    expect_false(grepl('cell\\s*=\\s*sCene\\$cell', reproduce_calls))
+    expect_true(grepl('transposonEffect\\s*=\\s*host\\.0\\$transposonEffect', reproduce_calls))
+    expect_false(grepl('fitness\\.advantage', reproduce_calls))
   }
+  init_branch <- grep('host\\.0\\$cell\\s*==\\s*"haploid"', simulate_src, value = TRUE)
+  expect_equal(length(init_branch), 1)
 })
 
-test_that("[REGRESSION] the progress-print throttle has reverted to a tautology (gEn %% 1 again)", {
-  ## Previously flagged as `(gEn %% 1) == 0` (always TRUE -- anything mod 1
-  ## is 0, so this prints EVERY generation regardless of gEn), then fixed in
-  ## an earlier revision to `(gEn %% 50) == 0` (a genuine throttle). This
-  ## revision's simulate.r has REVERTED to `(gEn %% 1) == 0` -- the
-  ## tautology is back. Purely cosmetic (console log verbosity only, no
-  ## effect on simulation correctness), but flagged clearly since it was
-  ## previously reported fixed. If unintentional, reinstating
-  ## `(gEn %% 50) == 0` (or whatever interval is wanted) is the simplest fix.
-  expect_false(grepl("gEn %% 1)", simulate_txt, fixed = TRUE))
+test_that("[RESOLVED] the progress-print throttle is back to (gEn %% 50), not the tautological (gEn %% 1)", {
+  ## An earlier revision reverted this to `(gEn %% 1) == 0` (always TRUE);
+  ## that regression was flagged and is gone again this revision.
   expect_true(grepl("gEn %% 50", simulate_txt, fixed = TRUE))
+  expect_false(grepl("gEn %% 1)", simulate_txt, fixed = TRUE))
 })
 
-## NOTE: the sim.df0/sim.df1/sim.df2 dead per-generation debug snapshots
-## remain commented out again this revision (`# sim.df0 = sim.df`, etc.)
-## rather than live code, so that earlier-flagged concern stays resolved;
-## the test that pinned it down stays removed.
+test_that("[RESOLVED] the tPn catalog build now vectorises tPn.io(tPn.0) per row via strsplit", {
+  ## Confirms the actual call site changed (see test-func.R for the direct
+  ## demonstration of WHY this matters): `tPn.io(tPn.0)` alone would collapse
+  ## every matching transposon into one combined string; wrapping it in
+  ## strsplit(...,";")[[1]] recovers one flat string per row.
+  expect_true(any(grepl('tPn\\s*=\\s*data\\.frame\\(ini\\s*=\\s*strsplit\\(tPn\\.io\\(tPn\\.0\\),\\s*";"\\)\\[\\[1\\]\\]', simulate_src)))
+})
 
-test_that("[FINDING] transposon selection matches by uniqID value; host selection matches by row position", {
+test_that("[FINDING] transposon selection matches by uniqID value (now even multi-valued); host selection still matches by row position", {
   ## simulate.r resolves a scenario row into working fixtures with two
   ## different lookup strategies:
-  ##   tPn.0  = tPn.0[which(tPn.0$uniqID %in% sCene$transposon), ]  -- BY VALUE
-  ##   host.0 = host.0[unique(sCene$host), ]                        -- BY POSITION
-  ## template-host.csv has no id column of its own (confirmed against the
-  ## uploaded file: recom,recomH1,cell,genotoxic only), so scenario.csv's
-  ## "host" column can only ever be a bare row number. This is a new
-  ## asymmetry introduced by this revision's host.0/template-host.csv split
-  ## -- reordering template-host.csv would silently repoint scenario.csv's
-  ## "host" values at different rows, with nothing to catch it, whereas the
-  ## transposon side is immune to reordering by construction. Confirmed
-  ## directly against the source below (a "finding"/awareness check, not a
-  ## pass/fail bug assertion, since positional catalogs may be an accepted
-  ## convention here).
-  expect_true(any(grepl('tPn\\.0\\s*=\\s*tPn\\.0\\[which\\(tPn\\.0\\$uniqID %in% sCene\\$transposon\\)', simulate_src)))
+  ##   tPn.0  = tPn.0[which(tPn.0$uniqID %in% strsplit(sCene$transposon,";")[[1]]),]  -- BY VALUE (now supports several)
+  ##   host.0 = host.0[unique(sCene$host),]                                           -- BY POSITION (unchanged)
+  ## template-host.csv still has no id column of its own, so scenario.csv's
+  ## "host" column can only ever be a bare row number. The asymmetry is now
+  ## slightly wider than when this was first flagged: transposon selection
+  ## just gained explicit multi-value support, while host selection is
+  ## untouched. Still a "finding"/awareness check, not a pass/fail bug
+  ## assertion -- positional catalogs may be an accepted convention here.
+  expect_true(any(grepl('tPn\\.0\\s*=\\s*tPn\\.0\\[which\\(tPn\\.0\\$uniqID %in% strsplit\\(sCene\\$transposon,\\s*";"\\)\\[\\[1\\]\\]\\)', simulate_src)))
   expect_true(any(grepl('host\\.0\\s*=\\s*host\\.0\\[unique\\(sCene\\$host\\)', simulate_src)))
 })
 
 test_that("perturbGen: genotoxic = N yields exactly N DISTINCT reachable perturbation generations (for a large enough gEn.max)", {
-  ## simulate.r computes this inline (not as a function), so the formula is
-  ## necessarily duplicated here rather than called directly -- if the
-  ## formula in simulate.r ever changes, this copy must be updated too.
-  ## NB: what actually matters behaviourally is DISTINCT generations, since
-  ## simulate.r only ever checks membership (`gEn %in% perturbGen`) -- a
-  ## repeated value in the vector doesn't create a second "hit". So this
-  ## counts unique(reachable), not raw vector length.
+  ## Formula unchanged again this revision. What actually matters
+  ## behaviourally is DISTINCT generations, since simulate.r only ever
+  ## checks membership (`gEn %in% perturbGen`) -- a repeated value in the
+  ## vector doesn't create a second "hit".
   compute_perturbGen <- function(gEn.max, genotoxic) {
     perturbGen <- ceiling(rev(seq(1, gEn.max, gEn.max / (genotoxic + 1)))) - 1
     perturbGen[perturbGen == 0] <- gEn.max + 1
     perturbGen
   }
-  ## Extended from a previous revision's {0,1,3} spot-check to the FULL
-  ## genotoxic range actually present in the uploaded template-host.csv
-  ## (confirmed: genotoxic takes every value 0-4 across its 100 rows).
   for (genotoxic in c(0, 1, 2, 3, 4)) {
     gEn.max <- 100
     pg <- compute_perturbGen(gEn.max, genotoxic)
@@ -323,29 +336,18 @@ test_that("perturbGen: genotoxic = N yields exactly N DISTINCT reachable perturb
 })
 
 test_that("[FINDING] perturbGen's 'exactly N reachable' property breaks down when gEn.max is small relative to genotoxic", {
-  ## The formula is unchanged from the previous revision (only its source
-  ## moved from sCene$genotoxic to host.0$genotoxic), but broadening the
-  ## test above to genotoxic's full real-world range (0-4, per template-
-  ## host.csv) surfaced something the old {0,1,3}-at-gEn.max=100 spot-check
-  ## never exercised: ceiling()'s rounding can make two or more distinct raw
-  ## perturbation points collapse onto the SAME integer generation when
-  ## gEn.max is small relative to genotoxic+1, so the count of DISTINCT
-  ## reachable perturbation generations ends up LESS than the nominal
-  ## genotoxic value -- silently under-delivering the intended perturbation
-  ## intensity for short runs, with no warning. Verified by hand (replicating
-  ## R's seq()/ceiling() arithmetic, then de-duplicating since only distinct
-  ## generations matter to `gEn %in% perturbGen`) for gEn.max = 2, matching
-  ## this suite's own smoke-test generation count:
-  ##   genotoxic=1 -> 1 distinct reachable (matches nominal, fine)
-  ##   genotoxic=2 -> 1 distinct reachable (SHORT of nominal 2)
-  ##   genotoxic=3 -> 1 distinct reachable (SHORT of nominal 3 -- collapses
-  ##                  just as far as genotoxic=2 does, at this gEn.max)
-  ##   genotoxic=4 -> 1 distinct reachable (SHORT of nominal 4, same reason)
-  ## This is why the smoke test above deliberately selects a template-
-  ## host.csv row with genotoxic=0 -- to stay fully deterministic rather
-  ## than quietly depend on this edge case. Flagged as a fresh, previously
-  ## untested consequence surfaced by knowing genotoxic's real range, not as
-  ## a claim that the underlying formula itself changed this revision.
+  ## Unchanged from an earlier revision's finding (the formula itself is
+  ## untouched this revision): ceiling()'s rounding can make two or more
+  ## distinct raw perturbation points collapse onto the SAME integer
+  ## generation when gEn.max is small relative to genotoxic+1. Verified by
+  ## hand for gEn.max = 2:
+  ##   genotoxic=1 -> 1 distinct reachable (matches nominal)
+  ##   genotoxic=2 -> 1 distinct reachable (short of nominal 2)
+  ##   genotoxic=3 -> 1 distinct reachable (short of nominal 3)
+  ##   genotoxic=4 -> 1 distinct reachable (short of nominal 4)
+  ## This is why the smoke test above selects a template-host.csv row with
+  ## genotoxic=0 -- to stay fully deterministic rather than quietly depend
+  ## on this edge case.
   compute_perturbGen <- function(gEn.max, genotoxic) {
     perturbGen <- ceiling(rev(seq(1, gEn.max, gEn.max / (genotoxic + 1)))) - 1
     perturbGen[perturbGen == 0] <- gEn.max + 1
@@ -368,10 +370,12 @@ test_that("[FINDING] perturbGen's 'exactly N reachable' property breaks down whe
 ## Final note
 ## ==========================================================================
 cat("\n==== test-simulate.R: NOTE ====\n",
-    "All tests in this file are expected to PASS -- including the tests\n",
-    "labelled [REGRESSION] and [FINDING], which document CURRENT behaviour\n",
-    "rather than assert a pass/fail correctness bar. See the header comment\n",
-    "block for the full write-up of what each one means. The end-to-end\n",
-    "smoke test is the one most likely to need small fixture tweaks in a\n",
-    "real environment (it exercises the full pipeline end to end).\n",
+    "All tests in this file are expected to PASS -- including tests labelled\n",
+    "[RESOLVED] and [FINDING], which document confirmed fixes / current\n",
+    "behaviour rather than open failures. See the header comment block for:\n",
+    "(1) the func_analysis.r stub assumption, (2) the two INFERRED (not\n",
+    "upload-confirmed) template-host.csv columns transposonEffect and\n",
+    "homologousAutoRecom -- both worth double-checking against your real\n",
+    "template-host.csv on first run. The end-to-end smoke test is the one\n",
+    "most likely to need a fixture tweak for exactly those two reasons.\n",
     "================================\n\n", sep = "")

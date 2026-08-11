@@ -5,51 +5,73 @@
 # in:  Rscript test-func.R      (run from the SAME directory as func.r)
 # out: console test report (testthat "summary" reporter)
 # arg: NA
-# date: 20260731
+# date: 20260811
 #
 # NOTES FOR THE USER
 # -------------------
-# * This is the FOURTH revision of this suite, updated against a func.r that
-#   restructures how transposons carry their own parameters. In this
-#   revision: (a) ini.transposon() was REMOVED entirely -- transposons are no
-#   longer synthesised per scenario run; they now come pre-defined, one row
-#   per transposon "type", in template-tpn.csv (11 columns: gene, location,
-#   generation, valid, uniqID, size, jumpRate, jumpH1, copyRate, copyH1,
-#   copyDir), read at source-time into the global tPn.0. (b) A second new
-#   global, host.0, is read from template-host.csv (recom, recomH1, cell,
-#   genotoxic) at source-time. (c) tPn.act() dropped its `scenario` argument
-#   entirely: jumpRate/jumpH1/copyRate/copyH1/copyDir are now read directly
-#   off each transposon's OWN record instead of from an external per-run
-#   scenario row. (d) sCene.mod() changed its positional indexing from
-#   sCene[2]/sCene[4] to sCene[1]/sCene[2], matching its real caller
-#   (tPn.act) now passing a 2-element `x[c("jumpH1","copyH1")]` pulled off
-#   the transposon record -- NOT a scenario/host data.frame. This suite's
-#   `mk_tpn()` fixture helper and every test that builds or parses a flat
-#   transposon record were updated to this 11-field schema (confirmed
-#   directly against the uploaded template-tpn.csv/template-host.csv rather
-#   than inferred from code alone). Tests for issues fixed in earlier
-#   revisions and left unchanged again here (rNumVec's uniform clamp,
-#   ini.host's LETTERS/gene.var validation, gene.recom's removal-grep) are
-#   kept as plain confirmation tests, unchanged from the last revision.
-# * NEW FINDING (this revision): tPn.io()'s data.frame branch was already
-#   collapsing ALL rows of a multi-row data.frame into ONE ";"-joined
-#   string (unchanged code) -- but this revision adds a NEW call site in
-#   simulate.r, `tPn = data.frame(ini = tPn.io(tPn.0), uniqID = tPn.0$uniqID,
-#   size = tPn.0$size)`, that silently depends on tPn.0 always resolving to
-#   exactly one row. See the dedicated "[FINDING]" test in the tPn.io()
-#   section below for a hands-on demonstration of why. This is a fresh
-#   consequence of this revision's refactor, not a claim that today's actual
-#   scenario.csv/template-tpn.csv pairing (which the uploaded files confirm
-#   is always exactly one transposon per scenario row) currently misbehaves.
+# * This is the FIFTH revision of this suite. This revision's func.r reworks
+#   gene fitness handling and fixes two previously-flagged/latent issues:
+#     (a) inParams() drops the old boolean essential/advantage gene.df
+#         columns (both lines are now commented out) in favour of a single
+#         numeric gene.df$fitness column, read from a NEW external CSV
+#         (input.csv's "gene fitness" Type points at it) and matched onto
+#         genes by locus_tag BEFORE haplotype-doubling. Genes absent from
+#         that file fall back to fitness = 0, which -- per func.r's own new
+#         comment -- now MEANS "essential / lethal if disrupted"
+#         (host.reproduce() checks `gene.df$fitness==0`).
+#     (b) inParams()'s transposon-titre formula changed from
+#         `round(1/rNumVec(...), 0)` (always >= 1) to
+#         `round(1/(rNumVec(...))-1, 0)` with a `[<0] <- 0` floor (now
+#         allows exactly 0 transposons for an individual).
+#     (c) host.reproduce() dropped its `fitness.advantage` parameter and
+#         gained `transposonEffect` (a switch for whether transposon SIZE
+#         imposes a fitness penalty at all); its multi-transposon (";"
+#         -joined) branch was reworked around gene.df$fitness.
+#     (d) tPn.x()'s overlap span changed from a multiplicative formula
+#         (as.numeric(t1[2]) * (1:size), which does not describe a
+#         contiguous span) to an additive one
+#         (as.numeric(t1[2]) + (1:size) - 1), with the overlap condition
+#         tightened to explicitly require t1 to start before t2.
+#     (e) tPn.act() no longer silently drops an invalid transposon -- it now
+#         carries it forward unchanged (the final colname-rewrite line moved
+#         outside the `if(valid)` block, with a new `else{x0 = tPn}`).
+#   Tests below were updated for (a)/(b)/(d)/(e) as confirmed fixes/reworks.
+# * TWO NEW FINDINGS in host.reproduce() this revision (both demonstrated
+#   below, not just asserted):
+#     1. The single-transposon (no ";", exactly one "!"-joined record)
+#        branch was NOT updated along with the multi-transposon branch: it
+#        still references `gene.df$essential` and `gene.df$advantage`,
+#        columns inParams() no longer creates (both are commented out).
+#        `gene.df$essential` on a data.frame with no such column is NULL in
+#        R; indexing `gene.df$locus_tag[NULL]` gives `character(0)`; and
+#        `x %in% character(0)` is always FALSE -- so this branch silently
+#        never applies essential-gene lethality OR fitness-based advantage
+#        to any host carrying exactly one transposon (arguably the most
+#        common case). Confirmed by direct hand-trace of R's NULL/empty-
+#        vector indexing rules (data.frame `$` on a missing column returns
+#        NULL; `x[NULL]` on an atomic vector returns a zero-length vector of
+#        the same type) -- both standard, well-defined R behaviour, not
+#        guesswork.
+#     2. In the multi-transposon branch's SECOND sub-case (the `!g0` /
+#        haplotype-2 disrupted-genes branch), the size-effect term reads
+#        `sum(t.tmp$sizeeff[g0])` where every other term in that same line
+#        uses `!g0` (`nonessential[!g0]`, `advantage[!g0]`, `new1 =
+#        sum(!g0)*2`). This looks like a copy-paste slip: the branch ends up
+#        summing the WRONG subset's size-effect values. It is only masked
+#        when `transposonEffect = FALSE` (sizeeff is 0 for everything in
+#        that case) or when `sum(g0) == sum(!g0)` by coincidence.
+#   Neither is a claim about intent -- both are mechanically demonstrated
+#   below via direct R semantics, not assumed.
 # * IMPORTANT DISCLOSURE: this script was authored and hand-traced line by
-#   line against func.r's source (and the actual uploaded template-tpn.csv /
-#   template-host.csv / scenario.csv, whose column schemas were read
-#   directly rather than guessed), but could NOT be executed in the
+#   line against func.r's source, but could NOT be executed in the
 #   authoring sandbox (no R interpreter available there, and no network
-#   access to install one). Please run it yourself with `Rscript test-func.R`
-#   and treat the first run as a shakedown -- open an issue/fix-forward on
-#   any fixture mismatch rather than assuming the underlying analysis is
-#   wrong.
+#   access to install one). One specific R semantics claim used in this
+#   revision's analysis (that data.frame `$column` on a non-existent column
+#   returns NULL, and that indexing an atomic vector with NULL/a zero-length
+#   index returns a zero-length result) is standard, well-documented R
+#   behaviour, not something this sandbox could execute to confirm, so it is
+#   flagged here for the user's own sanity-check on first run. Please run
+#   this suite yourself and treat the first run as a shakedown.
 
 if (!requireNamespace("testthat", quietly = TRUE)) {
   stop("Package 'testthat' is required.\nInstall it with: install.packages('testthat')")
@@ -86,9 +108,10 @@ FUNC_R_PATH <- locate_file("func.r")
 ## 1. Build an isolated temp project tree: code/ + raw/ + data/ (siblings)
 ##    func.r's top-level `read.csv("../raw/template-tpn.csv")` /
 ##    `read.csv("../raw/template-host.csv")` and inParams()'s internal
-##    "../raw/..." / "../data/..." reads are resolved relative to the
-##    working directory, so we build exactly the layout it expects and never
-##    touch the user's real raw/ or data/ folders.
+##    "../raw/..." / "../data/..." reads (including the NEW "gene fitness"
+##    file this revision) are resolved relative to the working directory,
+##    so we build exactly the layout it expects and never touch the user's
+##    real raw/ or data/ folders.
 ## ------------------------------------------------------------------------
 tmp_root <- file.path(tempdir(), paste0("func_r_tests_", as.integer(Sys.time())))
 dir.create(file.path(tmp_root, "code"), recursive = TRUE)
@@ -97,22 +120,15 @@ dir.create(file.path(tmp_root, "data"), recursive = TRUE)
 
 file.copy(FUNC_R_PATH, file.path(tmp_root, "code", "func.r"), overwrite = TRUE)
 
-## -- template-tpn.csv: schema confirmed directly against the uploaded file
-##    (11 columns: gene,location,generation,valid,uniqID,size,jumpRate,
-##    jumpH1,copyRate,copyH1,copyDir). Only the column NAMES/ncol() are ever
-##    used by func.r itself at source time (tPn.io()'s default `ref = tPn.0`
-##    argument uses colnames(ref)/ncol(ref)) -- the data row's actual values
-##    are never read by any func.r-level function, so one placeholder row is
-##    enough here.
+## -- template-tpn.csv / template-host.csv: schemas unchanged this revision
+##    (11 and 4 columns respectively, confirmed against the uploaded files
+##    in an earlier revision). Only the column NAMES/ncol() are ever used by
+##    func.r itself at source time, so one placeholder row each is enough.
 writeLines(c(
   "gene,location,generation,valid,uniqID,size,jumpRate,jumpH1,copyRate,copyH1,copyDir",
   ",0,0,TRUE,AAAAAAA,50,0.05,fixed,0.02,fixed,both"
 ), file.path(tmp_root, "raw", "template-tpn.csv"))
 
-## -- template-host.csv: schema confirmed directly against the uploaded file
-##    (4 columns: recom,recomH1,cell,genotoxic). No func.r-level function
-##    reads host.0 internally (only simulate.r does -- see test-simulate.R),
-##    so this just needs to exist and parse cleanly.
 writeLines(c(
   "recom,recomH1,cell,genotoxic",
   "0.1,switch,haploid,0"
@@ -130,17 +146,33 @@ gff_lines <- c(
 )
 writeLines(gff_lines, file.path(tmp_root, "data", "genome.gff"))
 
-## -- input.csv: Type/Value pairs consumed by inParams(). NOTE: "transposon
-##    size in bp" is dropped from this fixture -- it is no longer read
-##    anywhere in this revision of func.r/simulate.r (transposon sizes now
-##    come from template-tpn.csv's own `size` column instead), so keeping it
-##    here would just be a misleading, vestigial entry.
+## -- NEW this revision: gene-fitness.csv, columns locus_tag,fitness --
+##    column names confirmed directly against how func.r reads it
+##    (fItness$fitness[match(gEne$locus_tag, fItness$locus_tag)]). geneA is
+##    given fitness 0 (essential/lethal-if-disrupted, replacing the old
+##    "essential genes,geneA" convention), geneB a neutral 1, geneD an
+##    above-baseline 2 (replacing the old "genes for fitness advantage"
+##    convention). geneC is DELIBERATELY OMITTED to exercise the NA -> 0
+##    fallback explicitly (geneC keeps its unrelated recombination-mechanism
+##    role, which is unaffected by this revision).
+writeLines(c(
+  "locus_tag,fitness",
+  "geneA,0",
+  "geneB,1",
+  "geneD,2"
+), file.path(tmp_root, "raw", "gene-fitness.csv"))
+
+## -- input.csv: Type/Value pairs consumed by inParams(). "essential genes"
+##    and "genes for fitness advantage" are DROPPED from this fixture --
+##    both corresponding func.r lines are commented out this revision, so
+##    keeping them would be misleading, vestigial entries (superseded by
+##    "gene fitness" above). "transposon size in bp" remains dropped from an
+##    earlier revision (still unused).
 input_csv <- c(
   "Type,Value",
   "ref genome,genome.fasta",
-  "essential genes,geneA",
+  "gene fitness,../raw/gene-fitness.csv",
   "genes for recombination mechanism,geneC",
-  "genes for fitness advantage,geneD",
   "transposon population size per genome distribution,poisson",
   "transposon population size per genome mean,3",
   "transposon population size per genome sd,3",
@@ -150,8 +182,7 @@ input_csv <- c(
   "host organism constant generation number,3",
   "percentage transposon perturbation genotoxic,10",
   "percentage chance transposon perturbation boost,10",
-  "percentage amplitude transposon perturbation boost,5",
-  "percentage of fitness benefit with transposon,2"
+  "percentage amplitude transposon perturbation boost,5"
 )
 writeLines(input_csv, file.path(tmp_root, "raw", "input.csv"))
 
@@ -169,9 +200,7 @@ on.exit(setwd(old_wd), add = TRUE)
 ## ------------------------------------------------------------------------
 
 ## Build one flat "!"-joined transposon record matching tPn.0's 11 columns
-## (gene, location, generation, valid, uniqID, size, jumpRate, jumpH1,
-## copyRate, copyH1, copyDir) -- column order/names confirmed directly
-## against the uploaded template-tpn.csv.
+## (unchanged this revision).
 mk_tpn <- function(gene, location, generation, valid = TRUE, uniqID = "AAAAAAA",
                     size = 50, jumpRate = 0.05, jumpH1 = "fixed",
                     copyRate = 0.02, copyH1 = "fixed", copyDir = "both") {
@@ -180,11 +209,15 @@ mk_tpn <- function(gene, location, generation, valid = TRUE, uniqID = "AAAAAAA",
 }
 
 ## Build a small, hand-controlled gene.df with the exact columns inParams()
-## produces (locus_tag, start, end, product, length, interLength, essential,
-## recombination, advantage), WITHOUT the haplotype doubling, for tests that
-## need precise, deterministic control over gene boundaries.
+## now produces (locus_tag, start, end, product, length, interLength,
+## fitness, recombination), WITHOUT the haplotype doubling, for tests that
+## need precise, deterministic control over gene boundaries. `fitness`
+## replaces the old `essential`/`advantage` booleans this revision --
+## fitness = 0 now means "essential / lethal if disrupted" (see
+## host.reproduce()); any positive value is "viable", higher = more
+## advantageous.
 mk_gene_df <- function(locus_tag, start, end, product = "x",
-                        essential = FALSE, recombination = FALSE, advantage = FALSE) {
+                        fitness = 1, recombination = FALSE) {
   n <- length(locus_tag)
   df <- data.frame(
     locus_tag = locus_tag, start = start, end = end, product = product,
@@ -192,9 +225,8 @@ mk_gene_df <- function(locus_tag, start, end, product = "x",
   )
   df$length <- df$end - df$start + 1
   df$interLength <- c(df$start[1] - 1, df$start[-1] - df$end[-n])
-  df$essential <- rep_len(essential, n)
+  df$fitness <- rep_len(fitness, n)
   df$recombination <- rep_len(recombination, n)
-  df$advantage <- rep_len(advantage, n)
   df
 }
 
@@ -205,10 +237,7 @@ in_file <- inParams("../raw/input.csv")
 
 ## ------------------------------------------------------------------------
 ## 4. All test_that() blocks run inside with_reporter() so that a failing
-##    test is recorded and printed, but does NOT abort the rest of the suite
-##    (this is the same mechanism test_dir()/test_file() use internally;
-##    without it, a bare top-level test_that() failure can halt a plain
-##    script).
+##    test is recorded and printed, but does NOT abort the rest of the suite.
 ## ------------------------------------------------------------------------
 invisible(with_reporter("summary", start_end_reporter = TRUE, {
 
@@ -226,8 +255,6 @@ test_that("gffClean assigns the 9 standard GFF columns and expands attributes", 
 })
 
 test_that("gffClean fills a data.frame position with NA when a row's tag is unseen elsewhere", {
-  ## sanity check on the cbind/aTt matrix construction: a row with a tag no
-  ## other row has should still produce a well-formed data.frame column
   raw <- read.table(text = paste(
     "s1\ta\tregion\t1\t100\t.\t.\t.\tID=s1",
     "s1\ta\tgene\t1\t10\t.\t+\t.\tID=g1;locus_tag=g1;product=p;onlyhere=zz",
@@ -238,11 +265,8 @@ test_that("gffClean fills a data.frame position with NA when a row's tag is unse
   expect_true(is.na(cleaned$onlyhere[cleaned$type == "region"]))
 })
 
-## NOTE: gffClean() is unchanged again in this revision, so per the user's
-## instruction its previously-flagged "=" -splitting fragility (an attribute
-## VALUE containing "=" gets truncated, and can add a spurious extra column)
-## remains left as-is deliberately; the test that pinned it down stays
-## removed.
+## NOTE: gffClean() is unchanged again this revision, so its previously-
+## flagged "=" -splitting fragility remains left as-is deliberately.
 
 ## ==========================================================================
 ## rNumVec()
@@ -268,9 +292,6 @@ test_that("rNumVec rejects unsupported distribution names", {
 })
 
 test_that("rNumVec uniform: the original asymmetric-skew case (p1 < p2) stays fixed", {
-  ## Unchanged again this revision: max is clamped to min(1, p1+p2) alongside
-  ## min = max(0, min(1, p1-p2)). For p1=1, p2=5 this keeps the draw a plain
-  ## Uniform(0,1).
   set.seed(3)
   p1 <- 1; p2 <- 5
   draws <- rNumVec("uniform", L = 100000, p1 = p1, p2 = p2)
@@ -279,20 +300,14 @@ test_that("rNumVec uniform: the original asymmetric-skew case (p1 < p2) stays fi
 })
 
 test_that("rNumVec uniform: min can no longer end up above max", {
-  ## Unchanged again this revision: min = max(0, min(1, p1-p2)), alongside
-  ## max = min(1, p1+p2), so min <= max always holds, closing the min > max
-  ## case previously demonstrated for p1=5, p2=1.
   p1 <- 5; p2 <- 1
   min_val <- max(0, min(1, p1 - p2))
   max_val <- min(1, p1 + p2)
-  expect_true(min_val <= max_val)  # confirms the ordering holds (1 <= 1)
+  expect_true(min_val <= max_val)
 
   set.seed(14)
   draws <- rNumVec("uniform", L = 10000, p1 = p1, p2 = p2)
   expect_true(all(draws >= 0 & draws <= 1))
-  ## NOTE (not a bug, just worth knowing): with p1 - p2 (=4) > 1, both bounds
-  ## collapse to exactly 1, so runif(min=1, max=1) deterministically returns
-  ## 1 every time for this parameter combination.
   expect_equal(draws, rep(1, 10000))
 })
 
@@ -304,16 +319,29 @@ test_that("inParams returns params/gene/transposon.titre/genome with expected sh
   ## 4 genes in the GFF, doubled for the two haplotype copies
   expect_equal(nrow(in_file$gene), 8)
   expect_true(all(c(0, 1) == unique(substr(in_file$gene$locus_tag, 1, 1))))
-  ## population-size titres: one non-negative integer-ish count per individual
+  ## population-size titres: one count per individual
   expect_equal(length(in_file$transposon.titre), 6)
-  expect_true(all(in_file$transposon.titre >= 1))
 })
 
-test_that("inParams correctly flags essential / recombination / advantage genes on both haplotypes", {
-  expect_true(all(in_file$gene$essential[in_file$gene$locus_tag %in% c("0geneA", "1geneA")]))
+test_that("[RESOLVED] inParams()'s gene.df now carries a numeric fitness column (matched by locus_tag, both haplotypes), not booleans", {
+  ## essential/advantage are gone (both lines commented out in func.r);
+  ## fitness is matched from gene-fitness.csv BEFORE haplotype-doubling, so
+  ## both "0geneX"/"1geneX" copies inherit the identical value. geneC is
+  ## deliberately absent from gene-fitness.csv to exercise the NA -> 0
+  ## fallback (func.r: `gEne$fitness[is.na(gEne$fitness)] = 0`).
+  expect_false("essential" %in% colnames(in_file$gene))
+  expect_false("advantage" %in% colnames(in_file$gene))
+  expect_true("fitness" %in% colnames(in_file$gene))
+  expect_true(all(in_file$gene$fitness[in_file$gene$locus_tag %in% c("0geneA", "1geneA")] == 0))
+  expect_true(all(in_file$gene$fitness[in_file$gene$locus_tag %in% c("0geneB", "1geneB")] == 1))
+  expect_true(all(in_file$gene$fitness[in_file$gene$locus_tag %in% c("0geneD", "1geneD")] == 2))
+  ## geneC: absent from gene-fitness.csv -> NA -> 0 fallback
+  expect_true(all(in_file$gene$fitness[in_file$gene$locus_tag %in% c("0geneC", "1geneC")] == 0))
+})
+
+test_that("inParams still flags recombination-mechanism genes on both haplotypes (unaffected by the fitness rework)", {
   expect_true(all(in_file$gene$recombination[in_file$gene$locus_tag %in% c("0geneC", "1geneC")]))
-  expect_true(all(in_file$gene$advantage[in_file$gene$locus_tag %in% c("0geneD", "1geneD")]))
-  expect_false(any(in_file$gene$essential[in_file$gene$locus_tag %in% c("0geneB", "1geneB")]))
+  expect_false(any(in_file$gene$recombination[in_file$gene$locus_tag %in% c("0geneB", "1geneB")]))
 })
 
 test_that("inParams intergenic lengths are non-negative and consistent with gene coordinates", {
@@ -322,10 +350,28 @@ test_that("inParams intergenic lengths are non-negative and consistent with gene
   expect_equal(sum(one_copy$length, one_copy$interLength), in_file$genome / 2)
 })
 
-## NOTE: inParams() is unchanged again in this revision, so its previously-
-## flagged circular wrap-around issue (`gEne$length[x-1] <- ...` silently
-## no-ops when the negative gap is at row 1, since `x-1 == 0`) remains
-## left as-is deliberately; the test that pinned it down stays removed.
+## NOTE: inParams()'s previously-flagged circular wrap-around issue
+## (`gEne$length[x-1] <- ...` silently no-ops when the negative gap is at
+## row 1) is unrelated to this revision's fitness rework and remains left
+## as-is deliberately.
+
+test_that("[RESOLVED] inParams()'s transposon titre formula now allows exactly 0 (previously always >= 1)", {
+  ## OLD: tPn.pop = round(1/rNumVec(...), 0). With f="poisson",
+  ## rNumVec returns 1/(rpois(...)+1), so 1/that = rpois(...)+1 -- an
+  ## integer that is ALWAYS >= 1.
+  ## NEW: tPn.pop = round(1/(rNumVec(...))-1, 0); tPn.pop[tPn.pop<0] <- 0.
+  ## With the same poisson branch this simplifies to round(rpois(...),0) =
+  ## rpois(...) -- the raw Poisson draw, which CAN be 0. The explicit
+  ## `[<0] <- 0` floor exists for distributions (e.g. "normal") where the
+  ## algebra could otherwise dip negative.
+  expect_true(all(in_file$transposon.titre >= 0))
+  ## Confirm 0 is genuinely reachable (not just theoretically allowed) with
+  ## a larger sample and a small mean, deterministically seeded:
+  set.seed(15)
+  titres <- round(1/(rNumVec(f = "poisson", L = 500, p1 = 1)) - 1, 0)
+  titres[titres < 0] <- 0
+  expect_true(any(titres == 0))
+})
 
 ## ==========================================================================
 ## ini.host()
@@ -357,8 +403,6 @@ test_that("ini.host warns and truncates when too many per-gene variation values 
 })
 
 test_that("ini.host clamps (and warns on) a variation count above 26, instead of yielding NA alleles", {
-  ## Unchanged again this revision: ini.host explicitly checks
-  ## `gene.var > length(LETTERS)`, clamps it to 26, and warns.
   set.seed(6)
   expect_warning(
     hosts <- ini.host(host.var = 5, gene.df = in_file$gene[1:2, ], gene.var = 27),
@@ -368,28 +412,13 @@ test_that("ini.host clamps (and warns on) a variation count above 26, instead of
 })
 
 test_that("ini.host clamps (and warns on) a variation count below 1, instead of relying on R's 1:0 idiom", {
-  ## Unchanged again this revision: ini.host explicitly checks
-  ## `gene.var < 1`, clamps it to 1, and warns.
   expect_warning(
     hosts <- ini.host(host.var = 5, gene.df = in_file$gene[1:2, ], gene.var = 0),
     "Too few alleles"
   )
   expect_false(any(is.na(hosts)))
-  expect_true(all(toupper(hosts) == "A"))  # clamped to exactly 1 allele -> always "A"/"a"
+  expect_true(all(toupper(hosts) == "A"))
 })
-
-## ==========================================================================
-## ini.transposon() -- REMOVED in this revision
-## ==========================================================================
-## ini.transposon() no longer exists anywhere in func.r: transposons are now
-## pre-defined, one row per transposon "type" (each carrying its own
-## jumpRate/jumpH1/copyRate/copyH1/copyDir/size), in template-tpn.csv, loaded
-## once at source-time into the global tPn.0. simulate.r now builds its
-## working transposon pool directly from tPn.0
-## (`tPn = data.frame(ini = tPn.io(tPn.0), uniqID = tPn.0$uniqID, size =
-## tPn.0$size)`) instead of calling a synthesis function. The two tests that
-## previously exercised ini.transposon() have been removed rather than kept
-## as expected failures, since testing a deleted function isn't meaningful.
 
 ## ==========================================================================
 ## reZero()
@@ -440,24 +469,21 @@ test_that("tPn.io errors when given the wrong number of loose values", {
   expect_error(tPn.io(c("only", "two")))
 })
 
-test_that("[FINDING] tPn.io() on a multi-row data.frame returns ONE combined string, not one per row", {
-  ## tPn.io()'s data.frame branch does `paste(x$paste, collapse=";")` over
-  ## ALL rows -- this returns a single LENGTH-1 string spanning every row,
-  ## not a length-N vector with one flat string per row. This branch itself
-  ## is unchanged code, but this revision adds a NEW call site that leans on
-  ## it in simulate.r:
-  ##   tPn = data.frame(ini = tPn.io(tPn.0), uniqID = tPn.0$uniqID, size = tPn.0$size)
-  ## Demonstrated directly below: because `ini` ends up length 1 while
-  ## `uniqID`/`size` are length nrow(tPn.0), data.frame()'s recycling rule
-  ## lets a length-1 `ini` silently stand in for a longer column instead of
-  ## raising a length-mismatch error, so EVERY row would get the identical
-  ## (and wrong -- all-rows-concatenated) `ini` value if tPn.0 ever resolved
-  ## to more than one row for a given scenario. Today this is not triggered:
-  ## the uploaded scenario.csv always pairs exactly one transposon uniqID
-  ## per row, confirmed against the uploaded template-tpn.csv (no duplicate
-  ## uniqIDs) and scenario.csv (one transposon value per row). Flagged as a
-  ## fresh consequence of this revision's new call site, not a claim that
-  ## today's actual data triggers it.
+test_that("[RESOLVED] simulate.r's tPn-catalog call site now correctly vectorises tPn.io() per row", {
+  ## Last revision's [FINDING] here demonstrated that tPn.io()'s data.frame
+  ## branch collapses ALL rows into ONE ";"-joined string (unchanged code),
+  ## and that simulate.r's `tPn = data.frame(ini = tPn.io(tPn.0), ...)` call
+  ## site would silently mis-recycle if tPn.0 ever had more than one row.
+  ## This revision's simulate.r now reads
+  ## `tPn = data.frame(ini = strsplit(tPn.io(tPn.0), ";")[[1]], uniqID =
+  ## tPn.0$uniqID, size = tPn.0$size)` -- confirmed here directly against
+  ## tPn.io(): wrapping its output in strsplit(...,";")[[1]] recovers a
+  ## proper length-N vector (one flat string per row), which now pairs up
+  ## correctly with tPn.0's length-N uniqID/size columns instead of
+  ## recycling a length-1 value. This is also exactly why simulate.r's
+  ## scenario.csv can now select MULTIPLE transposons per scenario row
+  ## (`tPn.0[which(tPn.0$uniqID %in% strsplit(sCene$transposon,";")[[1]]),]`)
+  ## without the earlier hazard.
   df2 <- data.frame(
     gene = c("gA", "gB"), location = c(1, 2), generation = c(0, 0),
     valid = c(TRUE, TRUE), uniqID = c("AAAAAAA", "BBBBBBB"),
@@ -465,13 +491,11 @@ test_that("[FINDING] tPn.io() on a multi-row data.frame returns ONE combined str
     copyRate = c(0.1, 0.1), copyH1 = c("fixed", "fixed"), copyDir = c("both", "both"),
     stringsAsFactors = FALSE
   )
-  flat <- tPn.io(df2)
-  expect_length(flat, 1)                              # ONE string overall...
-  expect_equal(length(strsplit(flat, ";")[[1]]), 2)    # ...containing both rows' records
-
-  demo <- data.frame(ini = tPn.io(df2), uniqID = df2$uniqID, size = df2$size)
-  expect_equal(nrow(demo), 2)              # data.frame() recycled silently, no error
-  expect_equal(demo$ini[1], demo$ini[2])   # both rows get the SAME (wrong) combined string
+  fixed_call <- strsplit(tPn.io(df2), ";")[[1]]
+  expect_length(fixed_call, 2)
+  demo <- data.frame(ini = fixed_call, uniqID = df2$uniqID, size = df2$size)
+  expect_equal(nrow(demo), 2)
+  expect_false(identical(demo$ini[1], demo$ini[2]))  # each row keeps its OWN record now
 })
 
 ## ==========================================================================
@@ -495,18 +519,10 @@ test_that("reGeneDF grows the intergenic gap for an intergenic ('i') insertion",
 })
 
 test_that("reGeneDF reads each transposon's own recorded size instead of an external constant", {
-  ## Unchanged again this revision: reGeneDF() has no `tPn.size` parameter;
-  ## it computes as.numeric(i0[6]) -- the transposon's own `size` field,
-  ## still at position 6 in the new 11-column schema -- matching how
-  ## tPn.reloc() already works. Confirmed here with two differently-sized
-  ## transposons applied to the same gene table: each grows it by ITS OWN
-  ## size, not a shared/external value.
   gdf <- mk_gene_df(c("g1", "g2"), start = c(1, 50), end = c(40, 90))
-
   tpn_small <- mk_tpn("gg1", 5, 0, size = 20)
   out_small <- reGeneDF(tpn_small, gene.df = gdf)
   expect_equal(out_small$length[1], 40 - 1 + 1 + 20)
-
   tpn_large <- mk_tpn("gg1", 5, 0, size = 999)
   out_large <- reGeneDF(tpn_large, gene.df = gdf)
   expect_equal(out_large$length[1], 40 - 1 + 1 + 999)
@@ -516,9 +532,9 @@ test_that("reGeneDF reads each transposon's own recorded size instead of an exte
 ## host.reproduce()
 ## ==========================================================================
 test_that("host.reproduce returns one offspring row per parent for haploid reproduction", {
-  ## host.reproduce() expects each pool$host entry to be TWO ";"-joined
-  ## haplotype-copy strings (per haploid-model convention -- see simulate.r's
-  ## `paste(hOst[fTree[,1]], hOst[fTree[,2]], sep=";")`), each nGene chars long.
+  ## host.reproduce() dropped `fitness.advantage` and gained
+  ## `transposonEffect` this revision (a switch for whether transposon size
+  ## imposes any fitness penalty at all).
   set.seed(9)
   pool <- data.frame(
     host = c("AaBb;AaBb", "aabb;aabb", "AABB;AABB"),
@@ -526,37 +542,117 @@ test_that("host.reproduce returns one offspring row per parent for haploid repro
     familyTree = c("1;1", "2;2", "3;3"),
     stringsAsFactors = FALSE
   )
-  off <- host.reproduce(pool, gene.df = in_file$gene, fitness.advantage = 2, cell = "haploid")
+  off <- host.reproduce(pool, gene.df = in_file$gene, cell = "haploid", transposonEffect = FALSE)
   expect_equal(nrow(off), nrow(pool))
   expect_true(all(grepl(";", off$host)))
 })
 
-test_that("host.reproduce penalises offspring probability when an essential gene is disrupted", {
-  ess_tag <- in_file$gene$locus_tag[in_file$gene$essential][1]  # e.g. "0geneA"
+test_that("host.reproduce (';'-joined branch) fully excludes offspring that disrupt a fitness==0 gene on EVERY haplotype copy", {
+  ## Reworked for the fitness scheme: fitness==0 is now the "essential/
+  ## lethal" marker (gene.df$fitness==0), read correctly in this branch
+  ## (contrast with the [FINDING] below for the single-transposon branch,
+  ## which is NOT read correctly). Use a ";"-joined (2-element) transposon
+  ## string -- even for a single logical transposon -- specifically to stay
+  ## inside the correctly-reworked branch, and disrupt the fitness==0 gene
+  ## on BOTH haplotype copies so `prod(nonessential)` is 0 on both output
+  ## rows, making the outcome deterministic rather than merely probabilistic.
+  lethal_tag <- in_file$gene$locus_tag[in_file$gene$fitness == 0][1]  # "0geneA"
+  lethal_tag_h1 <- sub("^0", "1", lethal_tag)
+  hit_g0 <- mk_tpn(paste0("g", lethal_tag), 1, 0)
+  hit_g1 <- mk_tpn(paste0("g", lethal_tag_h1), 1, 0)
   pool <- data.frame(
     host = c("AAAA;AAAA", "AAAA;AAAA"),
-    transposon = c("", mk_tpn(paste0("g", ess_tag), 1, 0)),
+    transposon = c("", paste(hit_g0, hit_g1, sep = ";")),
     familyTree = c("1;1", "2;2"),
     stringsAsFactors = FALSE
   )
-  ## host 2 disrupts an essential gene on one haplotype copy only, so it is
-  ## disadvantaged but not fully excluded -- resample with distinct seeds
-  ## and check it is chosen as a parent less than half the time on average
-  ## (the null/no-effect expectation).
+  out <- host.reproduce(pool, gene.df = in_file$gene, cell = "haploid", transposonEffect = FALSE)
+  expect_false(any(grepl("^2", out$familyTree)))  # host 2 never chosen: lethal on both copies
+})
+
+test_that("[FINDING] host.reproduce's single-transposon branch never applies essential-gene lethality (dead gene.df$essential/$advantage refs)", {
+  ## Direct, deterministic demonstration of the mechanism (no resampling
+  ## needed): gene.df has no "essential"/"advantage" column any more (see
+  ## the inParams() section above), so gene.df$essential and
+  ## gene.df$advantage are NULL -- standard R behaviour for `$` on a missing
+  ## data.frame column.
+  expect_null(in_file$gene$essential)
+  expect_null(in_file$gene$advantage)
+  ## Indexing a character vector with NULL gives a zero-length result --
+  ## also standard, well-defined R behaviour, not guesswork:
+  expect_equal(in_file$gene$locus_tag[in_file$gene$essential], character(0))
+  ## ...so the single-transposon branch's own check,
+  ## `t.tmp["gene"] %in% paste0("g", gene.df$locus_tag[gene.df$essential])`,
+  ## is always FALSE regardless of which gene was actually hit:
+  lethal_tag <- in_file$gene$locus_tag[in_file$gene$fitness == 0][1]  # "0geneA"
+  hit_essential <- paste0("g", lethal_tag)
+  expect_false(hit_essential %in% paste0("g", in_file$gene$locus_tag[in_file$gene$essential]))
+
+  ## Functional consequence: a host with EXACTLY one transposon (no ";")
+  ## disrupting that same fitness==0 gene is NOT penalised at all -- run
+  ## many replicates and confirm it is picked as a parent about as often as
+  ## an untouched host (the null/no-effect rate), in contrast to the
+  ## ";'-joined test above where the equivalent disruption was fully
+  ## lethal.
+  pool <- data.frame(
+    host = c("AAAA;AAAA", "AAAA;AAAA"),
+    transposon = c("", mk_tpn(hit_essential, 1, 0)),
+    familyTree = c("1;1", "2;2"),
+    stringsAsFactors = FALSE
+  )
   counts <- vapply(seq_len(200), function(i) {
-    set.seed(10000 + i)
-    o <- host.reproduce(pool, gene.df = in_file$gene, fitness.advantage = 0, cell = "haploid")
+    set.seed(20000 + i)
+    o <- host.reproduce(pool, gene.df = in_file$gene, cell = "haploid", transposonEffect = FALSE)
     sum(grepl("^2", o$familyTree))
   }, numeric(1))
-  expect_true(mean(counts) < nrow(pool) / 2)
+  ## host 2 should be selected roughly as often as host 1 (no penalty
+  ## applied), i.e. NOT driven to (near-)zero the way the ';'-joined branch
+  ## drove it above.
+  expect_true(mean(counts) > 0)
+})
+
+test_that("[FINDING] the '!g0' branch's size-effect term sums the wrong subset ([g0] instead of [!g0])", {
+  ## Direct demonstration of the indexing mismatch itself (no dependency on
+  ## host.reproduce()'s stochastic sampling): the '!g0' branch's line reads
+  ## `... * (reZero(sum(t.tmp$advantage[!g0]), new1 = sum(!g0)*2) +
+  ## sum(t.tmp$sizeeff[g0]))` -- every term but the last uses `!g0`. With
+  ## unequal disrupted-gene sets, sum(sizeeff[g0]) and sum(sizeeff[!g0]) are
+  ## different numbers, and only transposonEffect = TRUE makes sizeeff
+  ## nonzero at all, so the mismatch is invisible unless BOTH conditions
+  ## hold (transposonEffect = TRUE AND sum(g0) != sum(!g0)).
+  size_all <- c(500, 2000)          # deliberately very different sizes
+  genome_len <- 10000                 # sum(gene.df$length + gene.df$interLength), held fixed
+  sizeeff <- size_all / genome_len * -2
+  g0 <- c(TRUE, FALSE)                # one disrupted gene on each haplotype
+  wrong_term <- sum(sizeeff[g0])      # what the current code computes for the !g0 branch
+  right_term <- sum(sizeeff[!g0])     # what it should compute
+  expect_false(isTRUE(all.equal(wrong_term, right_term)))
+  expect_equal(wrong_term, sizeeff[1])
+  expect_equal(right_term, sizeeff[2])
 })
 
 ## ==========================================================================
 ## tPn.x()
 ## ==========================================================================
+test_that("[RESOLVED] tPn.x()'s span is now a contiguous range, not a multiplicative sequence", {
+  ## OLD: t1.span = as.numeric(t1[2]) * (1:as.numeric(t1[6])) -- e.g. for
+  ## location=3, size=4 this gave {3,6,9,12} (multiples of 3), NOT the
+  ## contiguous bases {3,4,5,6} a "span starting at 3, length 4" should be.
+  ## NEW: t1.span = as.numeric(t1[2]) + (1:as.numeric(t1[6])) - 1, e.g.
+  ## {3,4,5,6} for the same inputs -- geometrically correct. Demonstrated
+  ## with a case the OLD formula got wrong: t2 starting at location 5 IS
+  ## within a true 4bp span starting at 3, and the NEW code correctly
+  ## invalidates t1; the old multiplicative formula's span ({3,6,9,12}) did
+  ## not contain 5, so it would have missed this real overlap.
+  t1 <- mk_tpn("gG1", 3, 0, valid = TRUE, size = 4)
+  t2 <- mk_tpn("gG1", 5, 1, valid = TRUE, size = 4)
+  out <- tPn.x(t1, t2)
+  expect_false(as.logical(tPn.io(out)["valid"]))
+})
+
 test_that("tPn.x invalidates the earlier transposon when spans overlap on the same gene", {
-  t1 <- mk_tpn("gG1", 2, 0, valid = TRUE, size = 10)
-  t2 <- mk_tpn("gG1", 2, 1, valid = TRUE, size = 10)  # identical span, same gene, later gen
+  t1 <- mk_tpn("gG1", 2, 0, valid = TRUE, size = 10)   # span 2..11
+  t2 <- mk_tpn("gG1", 6, 1, valid = TRUE, size = 10)    # starts at 6, inside 2..11, and after t1
   out <- tPn.x(t1, t2)
   expect_false(as.logical(tPn.io(out)["valid"]))
 })
@@ -566,6 +662,19 @@ test_that("tPn.x leaves a transposon untouched when spans do not overlap or gene
   t2 <- mk_tpn("gG2", 2, 0, size = 10)
   out <- tPn.x(t1, t2)
   expect_equal(out, t1)
+})
+
+test_that("tPn.x no longer invalidates when t2 starts at or before t1 (the new explicit ordering check)", {
+  ## NEW this revision: the condition now explicitly requires
+  ## as.numeric(t1[2]) < as.numeric(t2[2]) (t1 must start strictly earlier).
+  ## Two transposons at the IDENTICAL location no longer trigger
+  ## invalidation via this check (previously, with the old multiplicative
+  ## span and no ordering check, identical locations happened to still
+  ## overlap and invalidate).
+  t1 <- mk_tpn("gG1", 5, 0, valid = TRUE, size = 10)
+  t2 <- mk_tpn("gG1", 5, 1, valid = TRUE, size = 10)  # same location as t1
+  out <- tPn.x(t1, t2)
+  expect_true(as.logical(tPn.io(out)["valid"]))  # NOT invalidated: t1[2] < t2[2] is FALSE (5 < 5)
 })
 
 ## ==========================================================================
@@ -579,11 +688,6 @@ test_that("tPn.r forces the valid flag TRUE on every transposon in a vector", {
   expect_true(all(sapply(parsed, function(p) as.logical(p["valid"]))))
 })
 
-## NOTE: tPn.r() is unchanged again this revision, so its previously-flagged
-## fragile reliance on read.table()'s default blank.lines.skip=TRUE to
-## silently drop excised ("") transposon entries remains left as-is
-## deliberately; the test that pinned it down stays removed.
-
 ## ==========================================================================
 ## tPn.reloc()
 ## ==========================================================================
@@ -592,12 +696,6 @@ test_that("tPn.reloc shifts downstream genes' start/end by the transposon size",
   out <- tPn.reloc(mk_tpn("", 0, 0, size = 30), gen = 1, gene.df = gdf, tPn.prob = 0.01)
   expect_true(all(out$end >= gdf$end))
 })
-
-## NOTE: tPn.reloc() is unchanged again this revision, so its previously-
-## flagged last-gene boundary issue (`min(x+1, nrow(gene.df))` collapses to
-## `x:x` when x is the last row) remains left as-is deliberately; the test
-## that pinned it down stays removed. The contrasting non-last-gene case
-## below is unaffected and still holds.
 
 test_that("tPn.reloc correctly leaves the start unshifted for a non-last gene's CDS insertion", {
   gdf <- mk_gene_df(c("g1", "g2"), start = c(1, 500), end = c(100, 600))
@@ -626,20 +724,8 @@ test_that("h1.mod's charlesworth hypothesis divides rate by transposon count", {
   expect_equal(out[1], 0.05)
 })
 
-## NOTE: h1.mod() is unchanged again this revision, so its previously-
-## flagged unguarded division by numTpn (Inf when numTpn == 0 under the
-## "charlesworth" hypothesis) remains left as-is deliberately; the test that
-## pinned it down stays removed.
-
 test_that("sCene.mod returns 4 values ordered (jump-inherit, copy-inherit, jump, copy)", {
   set.seed(12)
-  ## sCene.mod's real caller (tPn.act) now passes `sCene = x[c("jumpH1",
-  ## "copyH1")]` -- a 2-element named vector pulled directly off the
-  ## transposon's OWN record -- and sCene.mod indexes it positionally as
-  ## sCene[1] (jump hypothesis) / sCene[2] (copy hypothesis). There is no
-  ## longer any scenario/host data.frame passed into sCene.mod at all, so we
-  ## mirror that 2-element shape here rather than a 9-column scenario row
-  ## (which this revision's schema no longer has anywhere).
   tpn_bg <- mk_tpn("gG1", 1, 0, size = 50, jumpRate = 0.1, copyRate = 0.05)
   out <- sCene.mod(pRobs = c(0.1, 0.05), tPn.bg = tpn_bg,
                     sCene = c(jumpH1 = "fixed", copyH1 = "fixed"),
@@ -670,17 +756,19 @@ test_that("tPn.get on a colname with no accumulated transposons returns an empty
 ## ==========================================================================
 ## tPn.act()
 ## ==========================================================================
-test_that("tPn.act leaves gene.df untouched (net of bookkeeping) when the transposon is invalid", {
-  ## tPn.act() dropped its `scenario` parameter entirely this revision --
-  ## jumpRate/jumpH1/copyRate/copyH1/copyDir/valid are all read directly off
-  ## the transposon record itself now, so the call site below has one fewer
-  ## argument than the previous revision's test.
+test_that("[RESOLVED] tPn.act now carries an invalid transposon forward unchanged instead of dropping it", {
+  ## Previously (last revision) the final colname-rewrite line lived INSIDE
+  ## the `if(valid)` block, so an invalid transposon was silently dropped --
+  ## this suite used to assert exactly that. Now the line moved outside the
+  ## if-block, with a new `else{x0 = tPn}` for the invalid case, so the
+  ## transposon is explicitly preserved as-is (no jump, no copy, just
+  ## carried forward) instead of vanishing.
   gdf <- mk_gene_df(c("g1", "g2"), start = c(1, 100), end = c(50, 150))
   colnames(gdf)[1] <- "locus_tag"
   tpn <- mk_tpn("gg1", 5, 0, valid = FALSE)
   out <- tPn.act(tpn, equivalent = FALSE, gen = 1, gene.df = gdf,
                   pAram = c(0, 0, 1), gToxic = FALSE)
-  expect_equal(tPn.get(out, transposon = TRUE), "")  # invalid transposon dropped, not carried forward
+  expect_equal(tPn.get(out, transposon = TRUE), tpn)  # carried forward UNCHANGED, not dropped
 })
 
 test_that("tPn.act at generation 0 forces a jump and forbids a copy (seeding behaviour)", {
@@ -689,8 +777,6 @@ test_that("tPn.act at generation 0 forces a jump and forbids a copy (seeding beh
   tpn <- mk_tpn("gg1", 5, 0, valid = TRUE, size = 10)
   out <- tPn.act(tpn, equivalent = FALSE, gen = 0, gene.df = gdf,
                   pAram = c(0, 0, 1), gToxic = FALSE)
-  ## a[1] is forced TRUE, a[2] forced FALSE at gen 0 -> exactly one relocated
-  ## transposon should be recorded, none copied
   recorded <- tPn.get(out, transposon = TRUE)
   expect_equal(length(strsplit(recorded, ";")[[1]]), 1)
 })
@@ -710,9 +796,6 @@ test_that("gene.recom transfers the donor's transposon at the target locus", {
 })
 
 test_that("gene.recom's removal uses the same 'g'-prefixed pattern as its detection check", {
-  ## Unchanged again this revision: both grep() calls in the removal steps
-  ## match paste0("g", locusTags[g2to1]) -- the SAME pattern the presence
-  ## checks use -- instead of the bare tag.
   h1 <- paste(mk_tpn("ig2", 1, 0), mk_tpn("gg9", 1, 0), sep = ";")
   out <- gene.recom(h1, "", g2to1 = 2, locusTags = c("g1", "g2", "g9"))
   expect_equal(out, h1)
@@ -722,11 +805,6 @@ test_that("gene.recom's removal uses the same 'g'-prefixed pattern as its detect
 ## g.Recom()
 ## ==========================================================================
 test_that("g.Recom leaves the population size and column structure unchanged", {
-  ## g.Recom() indexes host strings as flat CHARACTER VECTORS via
-  ## strsplit(host[i], "") with a "+1" offset for haplotype-1 gene indices --
-  ## that offset only makes sense if position (nGene+1) is the literal ";"
-  ## separator, i.e. host must be "XXXX;YYYY" (2*nGene + 1 characters), not
-  ## a bare nGene-character string.
   set.seed(13)
   h <- ini.host(4, in_file$gene, 2)
   pool <- data.frame(
@@ -735,20 +813,15 @@ test_that("g.Recom leaves the population size and column structure unchanged", {
     familyTree = paste(1:4, 1:4, sep = ";"),
     stringsAsFactors = FALSE
   )
-  ## recomRate chosen so floor(recomRate * nrow(gene.df)) >= 1, i.e. the
-  ## recombination branch is actually exercised rather than a no-op
-  ## (nrow(in_file$gene) == 8 here, so 0.3 * 8 = 2.4 -> floor 2).
   out <- g.Recom(pool, gene.df = in_file$gene, recomRate = 0.3, hypothesis = "switch")
   expect_equal(dim(out), dim(pool))
   expect_equal(colnames(out), colnames(pool))
 })
 
-## NOTE: g.Recom()'s recombination-mechanism check
-## (`numGenes[grep(gene.df$locus_tag[i], res.pool$transposon)] <- 0`) is
-## unchanged again this revision -- still an unanchored substring match with
-## no fixed=TRUE/word-boundary -- so it remains left as-is deliberately; the
-## test that pinned it down stays removed. (This is a distinct spot from
-## gene.recom()'s removal grep, which WAS fixed in an earlier revision.)
+## NOTE: g.Recom() is unchanged again this revision (still untouched by the
+## fitness rework -- it only ever reads gene.df$recombination), so its
+## previously-flagged unanchored substring match in the recombination-
+## mechanism check remains left as-is deliberately.
 
 }))  # end with_reporter()
 
@@ -761,10 +834,11 @@ setwd(old_wd)
 ## Final note
 ## ==========================================================================
 cat("\n==== test-func.R: NOTE ====\n",
-    "All tests in this file are expected to PASS against the current func.r.\n",
-    "One test is explicitly labelled [FINDING] rather than a pass/fail bug\n",
-    "check: it demonstrates a latent multi-row hazard at simulate.r's new\n",
-    "`tPn = data.frame(ini = tPn.io(tPn.0), ...)` call site, not triggered by\n",
-    "today's actual scenario.csv/template-tpn.csv pairing. See the header\n",
-    "comment block and the test's own comment for the full write-up.\n",
+    "All tests in this file are expected to PASS against the current func.r,\n",
+    "including tests labelled [RESOLVED] and [FINDING] (these document\n",
+    "confirmed fixes / current behaviour, not open failures). See the header\n",
+    "comment block for the two NEW findings this revision: host.reproduce()'s\n",
+    "single-transposon branch still references gene.df$essential/$advantage\n",
+    "(now nonexistent columns), and its '!g0' branch's size-effect term sums\n",
+    "the [g0] subset instead of [!g0].\n",
     "============================\n\n", sep = "")
