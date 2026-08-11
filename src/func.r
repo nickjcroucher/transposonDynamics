@@ -41,15 +41,18 @@ rNumVec = function(f="", L=1, p1=1, p2=0){
 inParams = function(pArams = "../raw/input.csv"){
   pMs = read.csv(pArams, header = T)
   gFf = gffClean(read.table(paste0("../data/",strsplit(pMs$Value[pMs$Type=="ref genome"], "[.]")[[1]][1],".gff"), sep = "\t", header = F, quote = ""))
+  fItness = read.csv(pMs$Value[pMs$Type=="gene fitness"], header = T)
   gEne = unique(gFf[!is.na(gFf$product),c("locus_tag","start","end","product")])
   gEne$length = gEne$end - gEne$start + 1
   gEne$interLength = c(gEne$start[1]-1+gFf[gFf$type=="region", "end"]-gEne$end[nrow(gEne)], gEne$start[-1] - gEne$end[-nrow(gEne)])
   x = which(gEne$interLength<0)
   gEne$length[x-1] = gEne$length[x-1] + gEne$interLength[x]
   gEne$interLength[x] = 0
-  gEne$essential = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="essential genes"], ";")[[1]] ## essential genes
+  gEne$fitness = fItness$fitness[match(gEne$locus_tag, fItness$locus_tag)]
+  gEne$fitness[is.na(gEne$fitness)] = 0 # essential genes cannot generate any transposon library mutants
+  # gEne$essential = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="essential genes"], ";")[[1]] ## essential genes
   gEne$recombination = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="genes for recombination mechanism"], ";")[[1]] ## recombination mechanism
-  gEne$advantage = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="genes for fitness advantage"], ";")[[1]] ## genes for fitness advantage
+  # gEne$advantage = gEne$locus_tag %in% strsplit(pMs$Value[pMs$Type=="genes for fitness advantage"], ";")[[1]] ## genes for fitness advantage
   gEne = rbind(gEne,gEne)
   gEne$locus_tag = paste0(rep(0:1, each = nrow(gEne)/2), gEne$locus_tag)
   gEnome = as.numeric(unname(gFf[gFf$type=="region", c("start", "end")]))
@@ -140,24 +143,23 @@ reGeneDF = function(tPn, gene.df){
 }
 
 ##### New host population #####
-host.reproduce = function(res.pool, gene.df, fitness.advantage, cell = "haploid", transposonEffect = F){
+host.reproduce = function(res.pool, gene.df, cell = "haploid", transposonEffect = F){
   # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
   ## Calculate ecological fitness deficit
-  fitness.advantage = as.numeric(fitness.advantage)
   res.tmp = data.frame(host = unlist(read.table(text = res.pool$host, sep = ";")), transposon = NA, familyTree = unlist(read.table(text = res.pool$familyTree, sep = ";")), offspring.prob = 1)
   for(i in 1:nrow(res.pool)){if(length(grep(";",res.pool$transposon[i]))>0){
     t.tmp = tPn.io(res.pool$transposon[i])
-    t.tmp$nonessential = as.numeric(!(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$essential])))
-    t.tmp$advantage = fitness.advantage/100 * as.numeric(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$advantage]))
+    t.tmp$nonessential = as.numeric(!(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$fitness==0])))
+    t.tmp$advantage = ifelse(substr(t.tmp$gene,1,1)=="i", 1, gene.df$fitness[match(substr(t.tmp$gene,2,nchar(t.tmp$gene)), gene.df$locus_tag)]) #fitness.advantage/100 * as.numeric(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$advantage]))
     t.tmp$sizeeff = ifelse(transposonEffect, t.tmp$size/sum(gene.df$length + gene.df$interLength)*-2, 0)
     g0 = substr(t.tmp$gene,2,2)==0
 
     if(sum(g0)>0){
-      res.tmp$offspring.prob[i] = res.tmp$offspring.prob[i] * prod(t.tmp$nonessential[g0]) * (1 + sum(t.tmp$advantage[g0] + t.tmp$sizeeff[g0]))
+      res.tmp$offspring.prob[i] = res.tmp$offspring.prob[i] * prod(t.tmp$nonessential[g0]) * (reZero(sum(t.tmp$advantage[g0]), new1 = sum(g0)*2) + sum(t.tmp$sizeeff[g0]))
       res.tmp$transposon[i] = tPn.io(t.tmp[g0,1:(ncol(t.tmp)-3)])
     }
     if(sum(g0)<length(g0)){
-      res.tmp$offspring.prob[nrow(res.pool) + i] = res.tmp$offspring.prob[nrow(res.pool) + i] * prod(t.tmp$nonessential[!g0]) * (1 + sum(t.tmp$advantage[!g0] + t.tmp$sizeeff[!g0]))
+      res.tmp$offspring.prob[nrow(res.pool) + i] = res.tmp$offspring.prob[nrow(res.pool) + i] * prod(t.tmp$nonessential[!g0]) * (reZero(sum(t.tmp$advantage[!g0]), new1 = sum(!g0)*2) + sum(t.tmp$sizeeff[g0]))
       res.tmp$transposon[nrow(res.pool) + i] = tPn.io(t.tmp[!g0,1:(ncol(t.tmp)-3)])
     }
     rm(t.tmp,g0)

@@ -46,6 +46,7 @@ rEcom = c(10^-(1:4),0)
 rEcH1 = c("switch", "homeostatic")
 pAr = list(
   cell = c("haploid", "diploid"),
+  homologousAutoRecom = c(T,F),
   transposonEffect = c(T,F),
   genotoxic = 0:4 # number of genotoxic events
 )
@@ -59,8 +60,8 @@ colnames(a0)[-(1:2)] = names(pAr)
 write.csv(a0, "../raw/template-host.csv", row.names = F, quote = F)
 
 ##### Set overall scenario to do simulation #####
-tPn = a$uniqID[which(a$size == 1000 & a$jumpH1 == "fixed" & a$copyH1 == "fixed" & a$copyDir == "both")]
-hOst = row.names(a0)[which(a0$recomH1 == "switch" & a0$cell == "haploid")]
+tPn = a$uniqID[which(a$size == 1000 & a$jumpH1 == "fixed" & a$copyH1 == "fixed" & a$copyDir != "origin")]
+hOst = row.names(a0)[which(a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom == T)]
 
 res = data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
 write.csv(res, "../raw/scenario.csv", row.names = F, quote = F)

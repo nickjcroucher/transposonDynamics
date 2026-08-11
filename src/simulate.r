@@ -49,8 +49,8 @@ if(host.0$cell=="haploid"){
 sim.df$familyTree = paste(fTree[,1], fTree[,2], sep = ";")
 sim.df$host = paste(hOst[fTree[,1]], hOst[fTree[,2]], sep = ";")
 
-## Transposons
-ini.tPn = data.frame(tpn = sample(tPn$ini, sum(inFile$transposon.titre), replace = T), loc = rNumVec(f = "uniform", L = sum(inFile$transposon.titre), p1 = 0, p2 = 1), host = rep(1:nrow(sim.df), inFile$transposon.titre), newLoc = NA)
+## Transposons (duplicating between first and second genomes)
+ini.tPn = data.frame(tpn = sample(tPn$ini, sum(inFile$transposon.titre), replace = T), loc = rNumVec(f = "uniform", L = sum(inFile$transposon.titre), p1 = 0, p2 = .5), host = rep(1:nrow(sim.df), inFile$transposon.titre), newLoc = NA)
 for(i in 1:nrow(ini.tPn)){
   if(i>1){if(ini.tPn$host[i]!=ini.tPn$host[i-1]){g.tmp = inFile$gene}}else{g.tmp = inFile$gene}
   g.tmp = tPn.reloc(ini.tPn$tpn[i], 0, g.tmp, ini.tPn$loc[i])
@@ -63,6 +63,7 @@ for(i in 1:nrow(ini.tPn)){
   }}}
   sim.df$transposon[i] = paste(ini.tPn$newLoc[which(ini.tPn$host==i)], collapse = ";")
 };rm(i,i0,i1,g.tmp)
+sim.df$transposon = sub("^;$","",paste(sim.df$transposon,gsub("i0","i1",gsub("g0","g1",sim.df$transposon)), sep = ";"))
 
 ##### Wright-Fisher / Neutral model run #####
 tPn.iDx = "transposon population size per genome sd"
@@ -77,7 +78,7 @@ gEn = 0; repeat{
 #  cat(date(),": generation",gEn,"\n")
 
   ## Population reproduction stage
-  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, fitness.advantage = inFile$params$Value[inFile$params$Type=="percentage of fitness benefit with transposon"], cell = host.0$cell, transposonEffect = host.0$transposonEffect)
+  sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, cell = host.0$cell, transposonEffect = host.0$transposonEffect)
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators
@@ -98,7 +99,7 @@ gEn = 0; repeat{
         if(class(tPn.tag)=="character"){
           g.tmp = tPn.act(tPn = tPn.io(tPn.tag), equivalent = F, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }else{
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-ncol(tPn.tag)]), equivalent = tPn.tag$eq[i1] %in% tPn.tag$gene, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-ncol(tPn.tag)]), equivalent = ifelse(host.0$homologousAutoRecom, tPn.tag$eq[i1] %in% tPn.tag$gene,F), gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }
         tPn.list[[i]][i1] = tPn.get(g.tmp)
         colnames(g.tmp)[1] = tPn.get(g.tmp, F)
