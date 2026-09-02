@@ -61,4 +61,3 @@ if(length(table(a.tpn.df$uniqID))>1){
 
 ##### Export #####
 save(gEnealogy, rec.tpn, rec.hostTraject, rec.tpnTraject, rec.tpnGene.df, rec.uniqID, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
-cat(date(),": simulation and analysis completed",argv[3],"-",argv[5],"\n")

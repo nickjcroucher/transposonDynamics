@@ -13,9 +13,10 @@
 # BSUB -q week
 # BSUB -M 2000
 # BSUB -R "select[mem>2000] rusage[mem=2000] span[hosts=1]"
-# BSUB -J "ind[1-720]"
+# BSUB -J "ind[1-mAx]"
 
-Rscript ana_individual.r ${LSB_JOBINDEX}
+#Rscript ana_individual.r ${LSB_JOBINDEX}
+Rscript sum_tdy.r ${LSB_JOBINDEX}
 
 exit
 ## any BSUB -J with the correct format, no matter at any line, later line will replace earlier lines # BSUB -J "tdy[1-360]"

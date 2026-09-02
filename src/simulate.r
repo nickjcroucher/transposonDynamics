@@ -9,6 +9,7 @@
 
 argv=(commandArgs(T))
 if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")}
+eLim = 1 # tag for transposon survival
 
 ##### env set #####
 cat(date(),": set environment",argv[3],"-",argv[5],"\n")
@@ -16,6 +17,8 @@ source("func.r")
 source("func_analysis.r")
 set.seed(read.csv(argv[2], header = F)[,1][as.numeric(argv[3])])
 inFile = inParams(argv[1])
+fRes = !(tolower(inFile$params$Value[inFile$params$Type=="full result"]) %in% c("yes", "true"))
+xEli = !(tolower(inFile$params$Value[inFile$params$Type=="export transposon elimination"]) %in% c("yes", "true"))
 
 sCene = read.csv(argv[4], header = T)[as.numeric(argv[5]),]
 tPn.0 = tPn.0[which(tPn.0$uniqID %in% strsplit(sCene$transposon, ";")[[1]]),] # allow multiple transposons in simulation
@@ -116,6 +119,7 @@ gEn = 0; repeat{
       sim.df$transposon[i] = paste0(tPn.list[[i]], collapse = ";")
     }
   };rm(i)
+  if(xEli && all(sim.df$transposon == "")){eLim = -1; break} # Exit if transposons are eliminated in simulations
 
   ## Gene recombination stage (assume no transposons excise / add complications)
   # sim.df1 = sim.df
@@ -123,12 +127,22 @@ gEn = 0; repeat{
   # sim.df2 = sim.df
 }
 
-cat(date(),": printing warnings",argv[3],"-",argv[5],"\n")
-print(warnings())
+if(eLim > 0){
+  cat(date(),": printing warnings",argv[3],"-",argv[5],"\n")
+  print(warnings())
 
 ##### Simulation record export #####
-cat(date(),": result export",argv[3],"-",argv[5],"\n")
-save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+  cat(date(),": result export",argv[3],"-",argv[5],"\n")
+  if(fRes){
+    oUt = ceiling(seq(1,nrow(rec.host), (nrow(rec.host)-1)/10))
+    save(rec.host[oUt,], rec.transposon[oUt,], rec.offspring[oUt,], file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+  }else{
+    save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+  }
 
 ##### Simulation summary #####
-source("sim_summary.r")
+  source("sim_summary.r")
+  cat(date(),": simulation and analysis completed",argv[3],"-",argv[5],"\n")
+}else{
+  cat(date(),": Transposons eliminated: gen",gEn,"; no results exported despite simulation completed",argv[3],"-",argv[5],"\n")
+}
