@@ -10,13 +10,14 @@
 set.seed(1234)
 
 ##### Set transposon simulation scenarios #####
+cat(date(),": set transposon table\n")
 gEne = ""
 lOc = 0
 pAr = list(
   generation = 0,
   valid = T,
   uniqID = "",
-  size = c(500,1000,1500,2000),
+  size = 1000,
   jumpRate = c(10^-(1:4),0),
   jumpH1 = c("fixed", "charlesworth", "evolving"),
   copyRate = c(10^-(1:4),0),
@@ -32,6 +33,7 @@ for(i in 1:length(pAr)){
 colnames(a)[-(1:2)] = names(pAr)
 
 ## Set transposon uniqID
+cat(date(),": set transposon tags\n")
 uID.len = ceiling(log(nrow(a))/log(length(LETTERS)))
 repeat{
   uID = unique(as.data.frame(matrix(sample(LETTERS, nrow(a)*(uID.len+1), replace = T), ncol = uID.len+1)))
@@ -42,6 +44,7 @@ a$uniqID = apply(uID,1,paste0, collapse = "")[1:nrow(a)]
 write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)
 
 ##### Set cell simulation scenarios #####
+cat(date(),": set host cell table\n")
 rEcom = c(10^-(1:4),0)
 rEcH1 = c("switch", "homeostatic")
 pAr = list(
@@ -60,8 +63,9 @@ colnames(a0)[-(1:2)] = names(pAr)
 write.csv(a0, "../raw/template-host.csv", row.names = F, quote = F)
 
 ##### Set overall scenario to do simulation #####
-tPn = a$uniqID[which(a$size == 1000 & a$jumpH1 == "fixed" & a$copyH1 == "fixed" & a$copyDir != "origin")]
-hOst = row.names(a0)[which(a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom == T)]
+cat(date(),": set scenario table\n")
+tPn = a$uniqID[which(a$jumpH1 == "fixed" & a$copyH1 == "fixed" & a$copyDir == "both")]
+hOst = row.names(a0)[which(a0$recom == 0 & a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom == T & a0$transposonEffect == F & a0$genotoxic == 0)]
 
 res = data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
 write.csv(res, "../raw/scenario.csv", row.names = F, quote = F)

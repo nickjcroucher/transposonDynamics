@@ -65,7 +65,15 @@ inParams = function(pArams = "../raw/input.csv"){
     L = pMs$Value[pMs$Type=="host organism constant population size"],
     p1 = pMs$Value[pMs$Type==sub(" sd", " mean", tAg)],
     p2 = pMs$Value[pMs$Type==tAg]))-1,0)
-  tPn.pop[tPn.pop < 0] = 0
+  repeat{
+    t00 = which(tPn.pop < 1)
+    tPn.pop[t00] = round(1/(rNumVec(
+      f = pMs$Value[pMs$Type==sub(" sd", " distribution", tAg)],
+      L = length(t00),
+      p1 = pMs$Value[pMs$Type==sub(" sd", " mean", tAg)],
+      p2 = pMs$Value[pMs$Type==tAg]))-1,0)
+    if(length(t00) < 1){break}
+  }
   return(list(params = pMs, gene = gEne, transposon.titre = tPn.pop, genome = sum(c(gEne$length,gEne$interLength))))
 }
 
