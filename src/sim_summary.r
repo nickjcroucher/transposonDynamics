@@ -57,7 +57,19 @@ if(length(table(a.tpn.df$uniqID))>1){
   rec.uniqID = cbind(names(table(a.tpn.df$uniqID)), colSums(rec.tpnTraject[,-1]))
 }
 
+##### Gene recombination mechanism hit ratio #####
+hPos = grep(gsub(";","|",inFile$params$Value[inFile$params$Type=="genes for recombination mechanism"]), unlist(rec.transposon))
+h.Gen = (hPos %% nrow(rec.transposon))-1
+h.Gen[h.Gen < 0] = nrow(rec.transposon)-1
+h.Gen = as.data.frame(table(h.Gen)/ncol(rec.transposon))
+h.Gen[,1] = as.numeric(as.character(h.Gen[,1]))
+h.Miss = (seq_len(nrow(rec.transposon))-1)[!((seq_len(nrow(rec.transposon))-1) %in% h.Gen[,1])]
+h.Miss = as.data.frame(matrix(c(h.Miss, rep(0, length(h.Miss))), nrow = length(h.Miss)))
+colnames(h.Miss) = colnames(h.Gen)
+h.Gen = rbind(h.Gen, h.Miss)
+gRecom.hitRatio = h.Gen[order(h.Gen[,1]),]
+
 ##### Host genome phylogenetics ##### !!!
 
 ##### Export #####
-save(gEnealogy, rec.tpn, rec.hostTraject, rec.tpnTraject, rec.tpnGene.df, rec.uniqID, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+save(gEnealogy, rec.tpn, rec.hostTraject, rec.tpnTraject, rec.tpnGene.df, rec.uniqID, gRecom.hitRatio, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")

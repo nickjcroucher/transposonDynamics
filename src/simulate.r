@@ -8,7 +8,7 @@
 # date: 20260623
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "21")}
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -98,7 +98,7 @@ gEn = 0; repeat{
       if(class(tPn.tag)=="data.frame"){
         tPn.tag$eq = paste0(substr(tPn.tag$gene,1,1), abs(as.numeric(substr(tPn.tag$gene,2,2))-1), substr(tPn.tag$gene,3,nchar(tPn.tag$gene)))
       }
-      for(i1 in 1:tPn.sums[i]){
+      for(i1 in seq_len(tPn.sums[i])){
         if(class(tPn.tag)=="character"){
           g.tmp = tPn.act(tPn = tPn.io(tPn.tag), equivalent = F, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }else{
@@ -110,12 +110,11 @@ gEn = 0; repeat{
 
   ### 4. Validate each transposon
       if(length(tPn.list[[i]])>0){
-        tPn.list[[i]] = tPn.r(tPn.list[[i]])
+        tPn.list[[i]] = tPn.r(paste0(tPn.list[[i]], collapse = ";"))
         if(length(tPn.list[[i]])>1){
         for(i1 in 1:(length(tPn.list[[i]])-1)){ for(i2 in (i1+1):length(tPn.list[[i]])){
           tPn.list[[i]][i1] = tPn.x(tPn1 = tPn.list[[i]][i1], tPn2 = tPn.list[[i]][i2])
       }};rm(i1,i2) }}
-      # tPn.list[[i]] = tPn.r(paste0(tPn.list[[i]], collapse = ";"))
       sim.df$transposon[i] = paste0(tPn.list[[i]], collapse = ";")
     }
   };rm(i)
@@ -135,10 +134,11 @@ if(eLim > 0){
   cat(date(),": result export",argv[3],"-",argv[5],"\n")
   if(fRes){
     oUt = ceiling(seq(1,nrow(rec.host), (nrow(rec.host)-1)/10))
-    save(rec.host[oUt,], rec.transposon[oUt,], rec.offspring[oUt,], file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
-  }else{
-    save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+    rec.host0 = rec.host; rec.transposon0 = rec.transposon; rec.offspring0 = rec.offspring
+    rec.host = rec.host[oUt,]; rec.transposon = rec.transposon[oUt,]; rec.offspring = rec.offspring[oUt,]
   }
+  save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+  if(fRes){rec.host = rec.host0; rec.transposon = rec.transposon0; rec.offspring = rec.offspring0; rm(rec.host0,rec.transposon0,rec.offspring0)}
 
 ##### Simulation summary #####
   source("sim_summary.r")
@@ -146,3 +146,4 @@ if(eLim > 0){
 }else{
   cat(date(),": Transposons eliminated: gen",gEn,"; no results exported despite simulation completed",argv[3],"-",argv[5],"\n")
 }
+# c0 = rep(0,nrow(rec.transposon));for(i in seq_len(length(c0))){c0[i] = length(unlist(strsplit(as.character(rec.transposon[i,]), ";")))};rm(i);plot(x = seq_len(length(c0)), y = c0, cex = .1)
