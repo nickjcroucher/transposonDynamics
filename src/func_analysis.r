@@ -83,7 +83,7 @@ tpn.gen = function(x){
   g.df = as.data.frame(matrix(0, nrow = nrow(x), ncol = 2))
   colnames(g.df) = c("g", "i")
   n.df = as.data.frame(matrix(0, nrow = nrow(x), ncol = ncol(x)))
-  for(i in 1:nrow(x)){ if(sum(as.character(x[i,])!="")>0){
+  for(i in seq_len(nrow(x))){ if(sum(as.character(x[i,])!="")>0){
     n.df[i,] = lengths(strsplit(as.character(x[i,]), ";"))
     i0 = tPn.io(paste0(x[i,], collapse=";"))
     i1 = table(i0$generation)

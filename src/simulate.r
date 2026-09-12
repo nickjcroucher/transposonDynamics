@@ -130,19 +130,18 @@ if(eLim > 0){
   cat(date(),": printing warnings",argv[3],"-",argv[5],"\n")
   print(warnings())
 
+##### Simulation summary #####
+  cat(date(),": analysis started",argv[3],"-",argv[5],"\n")
+  source("sim_summary.r")
+
 ##### Simulation record export #####
   cat(date(),": result export",argv[3],"-",argv[5],"\n")
   if(fRes){
     oUt = ceiling(seq(1,nrow(rec.host), (nrow(rec.host)-1)/10))
-    rec.host0 = rec.host; rec.transposon0 = rec.transposon; rec.offspring0 = rec.offspring
     rec.host = rec.host[oUt,]; rec.transposon = rec.transposon[oUt,]; rec.offspring = rec.offspring[oUt,]
   }
   save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
-  if(fRes){rec.host = rec.host0; rec.transposon = rec.transposon0; rec.offspring = rec.offspring0; rm(rec.host0,rec.transposon0,rec.offspring0)}
 
-##### Simulation summary #####
-  source("sim_summary.r")
-  cat(date(),": simulation and analysis completed",argv[3],"-",argv[5],"\n")
 }else{
   cat(date(),": Transposons eliminated: gen",gEn,"; no results exported despite simulation completed",argv[3],"-",argv[5],"\n")
 }

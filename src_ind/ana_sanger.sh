@@ -9,7 +9,7 @@
 
 mkdir -p ../data
 
-sed -e "s/mAx/$(( `wc -l < ../data/scenario.csv` - 1 ))/" ana_ind_child.sh > sC.sh
+sed -e "s/mAx/$(( `wc -l < ../upload/scenario.csv` - 1 ))/" ana_ind_child.sh > sC.sh
 
 bsub < sC.sh
 

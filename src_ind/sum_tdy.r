@@ -9,7 +9,7 @@
 
 argv = as.numeric(commandArgs(T))
 if(length(argv)==0){argv = 1}
-f.sce = read.csv("../data/scenario.csv", header = T)
+f.sce = read.csv("../upload/scenario.csv", header = T)
 f.rda = list.files("../data", pattern = paste0("ana--.*_",argv,"\\.rda$"), full.names = T)
 
 ##### Calculate averages #####
