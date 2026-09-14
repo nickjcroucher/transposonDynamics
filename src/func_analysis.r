@@ -47,51 +47,43 @@ famRoot = function(p1 = "1!0.5;2!0.3;3!0.2", p2 = "1!0.5;2!0.3;3!0.2"){
 
 ##### f: Reconstruct family tree #####
 fAmily = function(tree.df){
-  cat(date(), ": mapping family tree\n")
-  n.var = as.numeric(unique(strsplit(paste0(tree.df[1,], collapse = ";"), ";")[[1]]))
-  n.var.df = data.frame(src = n.var[order(n.var)], prop = 0)
-  for(i in 1:length(n.var)){
-    n.0 = n.var.df; n.0[i,2] = 1
-    n.var[i] = paste(n.0[,1], n.0[,2], sep = "!", collapse = ";")
-  };rm(i)
-  t.df = as.data.frame(matrix(0, nrow = nrow(tree.df), ncol = length(n.var)))
-  for(i in 1:nrow(tree.df)){
-#cat(date(), ":", i, "/", nrow(tree.df), "(", round(i/nrow(tree.df)*100,2), "% )     \r")
-    for(i0 in 1:ncol(tree.df)){
-      i1 = as.numeric(strsplit(tree.df[i,i0], ";")[[1]])
-      if(i > 1){
-        tree.df[i,i0] = famRoot(p1 = tree.df[i-1,i1[1]], p2 = tree.df[i-1,i1[2]])
-      }else{
-        tree.df[i,i0] = famRoot(p1 = n.var[i1[1]], p2 = n.var[i1[2]])
-      }
-      if(i0 > 1){
-        i2[,2] = i2[,2] + read.table(text = strsplit(tree.df[i,i0], ";")[[1]], sep = "!")[,2]
-      }else{
-        i2 = read.table(text = strsplit(tree.df[i,i0], ";")[[1]], sep = "!")
-      }
-    };rm(i0, i1)
-    t.df[i,] = i2[,2]
-  };rm(i2);cat("\n")
-  t.df[is.na(t.df)] = 0
-  cat(date(), ": mapping done\n")
-  return(t.df)
+  nGen = nrow(tree.df); nPop = ncol(tree.df)
+  par = array(0, c(2, nPop, nGen))
+  for(i in seq_len(nGen)){par[,,i] = matrix(as.integer(unlist(strsplit(unlist(tree.df[i,], use.names=FALSE), ";"), use.names=FALSE)), nrow = 2)}
+  src = sort(unique(as.vector(par[,,1]))); K = length(src)
+  P = matrix(0, K, nPop); j = seq_len(nPop)
+  for(k in 1:2){ idx = cbind(match(par[k,,1], src), j); P[idx] = P[idx] + .5 }
+  out = matrix(0, nGen, K); out[1,] = rowSums(P)
+  for(i in 2:nGen){
+    P = (P[, par[1,,i], drop=F] + P[, par[2,,i], drop=F])/2
+    out[i,] = rowSums(P)
+  }
+  as.data.frame(out)
 }
 
 ##### f: Get transposon generations #####
-tpn.gen = function(x){
-  t.df = as.data.frame(matrix(0, nrow = nrow(x), ncol = nrow(x)))
-  g.df = as.data.frame(matrix(0, nrow = nrow(x), ncol = 2))
-  colnames(g.df) = c("g", "i")
-  n.df = as.data.frame(matrix(0, nrow = nrow(x), ncol = ncol(x)))
-  for(i in seq_len(nrow(x))){ if(sum(as.character(x[i,])!="")>0){
-    n.df[i,] = lengths(strsplit(as.character(x[i,]), ";"))
-    i0 = tPn.io(paste0(x[i,], collapse=";"))
-    i1 = table(i0$generation)
-    t.df[i,as.numeric(names(i1))+1] = i1
-    i1 = table(substr(i0$gene,1,1))
-    g.df[i,names(i1)] = i1
-  }};rm(i, i0, i1)
-  return(list(count = n.df, generation = t.df, distribution = g.df))
+tpn.gen = function(x, ref = tPn.0){
+  nG = nrow(x); nP = ncol(x); nF = ncol(ref)
+  iGen = which(colnames(ref) == "generation")
+  cnt  = matrix(0, nG, nP)
+  tgen = matrix(0, nG, nG)
+  dist = matrix(0, nG, 2, dimnames = list(NULL, c("g","i")))
+  for(i in seq_len(nG)){
+    cells = as.character(unlist(x[i,], use.names = F))
+    keep  = nzchar(cells)
+    if(!any(keep)) next
+    tok.l   = strsplit(cells, ";", fixed = T)
+    cnt[i,] = lengths(tok.l) * keep
+    tok = unlist(tok.l, use.names = F); tok = tok[nzchar(tok)]
+    if(!length(tok)) next
+    sp = strsplit(tok, "!", fixed = T)
+    if(any(lengths(sp) != nF)){ stop("malformed transposon record at generation ", i-1) }
+    fld = matrix(unlist(sp, use.names = F), nrow = nF)
+    tgen[i,] = tabulate(as.integer(fld[iGen,]) + 1, nbins = nG)
+    pfx = substr(tok, 1, 1)
+    dist[i,] = c(sum(pfx == "g"), sum(pfx == "i"))
+  }
+  return(list(count = as.data.frame(cnt), generation = as.data.frame(tgen), distribution = as.data.frame(dist)))
 }
 
 ##### f: Default loading simulation result file #####

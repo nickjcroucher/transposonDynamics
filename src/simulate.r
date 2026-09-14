@@ -8,7 +8,7 @@
 # date: 20260623
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "21")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")}
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -53,18 +53,19 @@ sim.df$familyTree = paste(fTree[,1], fTree[,2], sep = ";")
 sim.df$host = paste(hOst[fTree[,1]], hOst[fTree[,2]], sep = ";")
 
 ## Transposons (duplicating between first and second genomes)
-ini.tPn = data.frame(tpn = sample(tPn$ini, sum(inFile$transposon.titre), replace = T), loc = rNumVec(f = "uniform", L = sum(inFile$transposon.titre), p1 = 0, p2 = .5), host = rep(1:nrow(sim.df), inFile$transposon.titre), newLoc = NA)
-for(i in 1:nrow(ini.tPn)){
+ini.tPn = data.frame(tpn = sample(tPn$ini, sum(inFile$transposon.titre), replace = T), loc = rNumVec(f = "uniform", L = sum(inFile$transposon.titre), p1 = 0, p2 = .5), host = rep(seq_len(nrow(sim.df)), inFile$transposon.titre), newLoc = NA)
+for(i in seq_len(nrow(ini.tPn))){
   if(i>1){if(ini.tPn$host[i]!=ini.tPn$host[i-1]){g.tmp = inFile$gene}}else{g.tmp = inFile$gene}
   g.tmp = tPn.reloc(ini.tPn$tpn[i], 0, g.tmp, ini.tPn$loc[i])
   ini.tPn$newLoc[i] = tPn.get(g.tmp)
   colnames(g.tmp)[1] = tPn.get(g.tmp,F)
-};for(i in 1:ncol(rec.transposon)){
+}
+for(i in seq_len(ncol(rec.transposon))){
   g.tmp = which(ini.tPn$host==i)
-  if(length(g.tmp)>1){for(i0 in 1:(length(g.tmp)-1)){ for(i1 in (i0+1):length(g.tmp)){
-    ini.tPn$newLoc[i0] = tPn.x(ini.tPn$newLoc[i0], ini.tPn$newLoc[i1])
+  if(length(g.tmp)>1){for(i0 in seq_len(length(g.tmp)-1)){ for(i1 in (i0+1):length(g.tmp)){
+    ini.tPn$newLoc[g.tmp[i0]] = tPn.x(ini.tPn$newLoc[g.tmp[i0]], ini.tPn$newLoc[g.tmp[i1]])
   }}}
-  sim.df$transposon[i] = paste(ini.tPn$newLoc[which(ini.tPn$host==i)], collapse = ";")
+  sim.df$transposon[i] = paste(ini.tPn$newLoc[g.tmp], collapse = ";")
 };rm(i,i0,i1,g.tmp)
 sim.df$transposon = sub("^;$","",paste(sim.df$transposon,gsub("i0","i1",gsub("g0","g1",sim.df$transposon)), sep = ";"))
 
@@ -82,6 +83,7 @@ gEn = 0; repeat{
 
   ## Population reproduction stage
   sim.df = host.reproduce(res.pool = sim.df, gene.df = inFile$gene, cell = host.0$cell, transposonEffect = host.0$transposonEffect)
+  if(is.null(sim.df)){ eLim = -2; break }
 
   ## Transposon jumping stage
   ### 1. Set jumping indicators
@@ -142,7 +144,7 @@ if(eLim > 0){
   }
   save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
 
-}else{
-  cat(date(),": Transposons eliminated: gen",gEn,"; no results exported despite simulation completed",argv[3],"-",argv[5],"\n")
+}else{ if(eLim == -1){tGt = "Transposons"}else{tGt = "Host population"}
+  cat(date(),":",tGt," eliminated: gen",gEn,"; no results exported despite simulation completed",argv[3],"-",argv[5],"\n")
 }
 # c0 = rep(0,nrow(rec.transposon));for(i in seq_len(length(c0))){c0[i] = length(unlist(strsplit(as.character(rec.transposon[i,]), ";")))};rm(i);plot(x = seq_len(length(c0)), y = c0, cex = .1)

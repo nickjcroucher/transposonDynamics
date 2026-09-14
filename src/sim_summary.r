@@ -24,13 +24,12 @@ rec.hostTraject = fAmily(r.os0)/ncol(r.os0)
 cat(date(),": map transposon dominance\n")
 a.tpn = unique(unlist(strsplit(unlist(rec.transposon), ";")))
 rec.tpnTraject = cbind(a.tpn, as.data.frame(matrix(0, nrow = length(a.tpn), ncol = nrow(rec.transposon))))
-colnames(rec.tpnTraject) = c("transposon", paste0("gen",(1:nrow(rec.transposon))-1))
-for(i in 1:nrow(rec.transposon)){
-  i0 = table(unlist(strsplit(as.character(rec.transposon[i,]), ";")))
-  for(i1 in 1:length(i0)){
-    rec.tpnTraject[which(rec.tpnTraject[,1]==names(i0)[i1]),i+1] = i0[i1]
-  };rm(i1)
-};rm(i, i0)
+colnames(rec.tpnTraject) = c("transposon", paste0("gen",seq_len(nrow(rec.transposon))-1))
+tpnSplit = lapply(seq_len(nrow(rec.transposon)), function(i) unlist(strsplit(unlist(rec.transposon[i,], use.names=FALSE), ";")))
+a.tpn = unique(unlist(tpnSplit))
+tpnMat = vapply(tpnSplit, function(v) tabulate(match(v, a.tpn), nbins = length(a.tpn)), length(a.tpn))
+rec.tpnTraject = data.frame(transposon = a.tpn, tpnMat, stringsAsFactors = F)
+colnames(rec.tpnTraject) = c("transposon", paste0("gen", seq_len(nrow(rec.transposon))-1))
 
 ##### Gene insertion map #####
 cat(date(),": map recipient genes\n")
@@ -39,9 +38,9 @@ rec.tpnGene.df = unique(substr(a.tpn.df$gene,3,nchar(a.tpn.df$gene)))
 rec.tpnGene.df = cbind(rec.tpnGene.df, as.data.frame(matrix(0, nrow = length(rec.tpnGene.df), ncol = nrow(rec.transposon))))
 colnames(rec.tpnGene.df) = c("gene", paste0("gen",(1:nrow(rec.transposon))-1))
 a.tpn.df$map = match(substr(a.tpn.df$gene,3,nchar(a.tpn.df$gene)), rec.tpnGene.df$gene)
-for(i in 1:nrow(rec.tpnGene.df)){
-  rec.tpnGene.df[i,-1] = colSums(rec.tpnTraject[which(a.tpn.df$map==i),-1])
-};rm(i)
+tmp = rowsum(as.matrix(rec.tpnTraject[,-1]), group = a.tpn.df$map, reorder = T)
+idx = match(seq_len(nrow(rec.tpnGene.df)), as.integer(rownames(tmp)))
+rec.tpnGene.df[!is.na(idx), -1] = tmp[idx[!is.na(idx)], , drop = F]
 
 ##### Transposon tag map #####
 cat(date(),": map transposon type dominance\n")
@@ -59,15 +58,22 @@ if(length(table(a.tpn.df$uniqID))>1){
 
 ##### Gene recombination mechanism hit ratio #####
 hPos = grep(gsub(";","|",inFile$params$Value[inFile$params$Type=="genes for recombination mechanism"]), unlist(rec.transposon))
-h.Gen = (hPos %% nrow(rec.transposon))-1
-h.Gen[h.Gen < 0] = nrow(rec.transposon)-1
-h.Gen = as.data.frame(table(h.Gen)/ncol(rec.transposon))
-h.Gen[,1] = as.numeric(as.character(h.Gen[,1]))
+if(length(hPos) > 0){
+  h.Gen = (hPos %% nrow(rec.transposon))-1
+  h.Gen[h.Gen < 0] = nrow(rec.transposon)-1
+  h.Gen = as.data.frame(table(h.Gen)/ncol(rec.transposon))
+  h.Gen[,1] = as.numeric(as.character(h.Gen[,1]))
+}else{
+  h.Gen = data.frame(Var1 = seq_len(nrow(rec.transposon))-1, Freq = 0)
+}
 h.Miss = (seq_len(nrow(rec.transposon))-1)[!((seq_len(nrow(rec.transposon))-1) %in% h.Gen[,1])]
-h.Miss = as.data.frame(matrix(c(h.Miss, rep(0, length(h.Miss))), nrow = length(h.Miss)))
-colnames(h.Miss) = colnames(h.Gen)
-h.Gen = rbind(h.Gen, h.Miss)
+if(length(h.Miss) > 0){
+  h.Miss = as.data.frame(matrix(c(h.Miss, rep(0, length(h.Miss))), nrow = length(h.Miss)))
+  colnames(h.Miss) = colnames(h.Gen)
+  h.Gen = rbind(h.Gen, h.Miss)
+}
 gRecom.hitRatio = h.Gen[order(h.Gen[,1]),]
+rownames(gRecom.hitRatio) = NULL
 
 ##### Host genome phylogenetics ##### !!!
 
