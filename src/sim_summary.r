@@ -25,9 +25,15 @@ cat(date(),": map transposon dominance\n")
 a.tpn = unique(unlist(strsplit(unlist(rec.transposon), ";")))
 rec.tpnTraject = cbind(a.tpn, as.data.frame(matrix(0, nrow = length(a.tpn), ncol = nrow(rec.transposon))))
 colnames(rec.tpnTraject) = c("transposon", paste0("gen",seq_len(nrow(rec.transposon))-1))
-tpnSplit = lapply(seq_len(nrow(rec.transposon)), function(i) unlist(strsplit(unlist(rec.transposon[i,], use.names=FALSE), ";")))
+tpnSplit = lapply(seq_len(nrow(rec.transposon)), function(i){
+  v = unlist(strsplit(unlist(rec.transposon[i,], use.names = F), ";"))
+  return(v[nzchar(v)])
+})
 a.tpn = unique(unlist(tpnSplit))
-tpnMat = vapply(tpnSplit, function(v) tabulate(match(v, a.tpn), nbins = length(a.tpn)), length(a.tpn))
+tpnMat = matrix(0, nrow = length(a.tpn), ncol = length(tpnSplit))
+for(i in seq_along(tpnSplit)){
+  tpnMat[,i] = tabulate(match(tpnSplit[[i]], a.tpn), nbins = length(a.tpn))
+}
 rec.tpnTraject = data.frame(transposon = a.tpn, tpnMat, stringsAsFactors = F)
 colnames(rec.tpnTraject) = c("transposon", paste0("gen", seq_len(nrow(rec.transposon))-1))
 
