@@ -22,7 +22,7 @@ for(i in seq_len(length(f.rda))){
   if(i > 1){
     famTree = famTree + gEnealogy
     h.sweep = h.sweep + rec.hostTraject
-    t.pop = t.pop + as.numeric(rec.uniqID[,2])
+    # t.pop = t.pop + as.numeric(rec.uniqID[,2])
     t.gir = t.gir + rec.tpn$distribution$g/rowSums(rec.tpn$distribution)
     t.ppavg = t.ppavg + rowMeans(rec.tpn$count)
     t.gen = t.gen + rec.tpn$generation
@@ -31,7 +31,7 @@ for(i in seq_len(length(f.rda))){
   }else{
     famTree = gEnealogy
     h.sweep = rec.hostTraject
-    t.pop = as.numeric(rec.uniqID[,2])
+    # t.pop = as.numeric(rec.uniqID[,2])
     t.gir = rec.tpn$distribution$g/rowSums(rec.tpn$distribution)
     t.ppavg = rowMeans(rec.tpn$count)
     t.gen = rec.tpn$generation
@@ -42,11 +42,11 @@ for(i in seq_len(length(f.rda))){
 
 famTree = famTree / length(f.rda)
 h.sweep = h.sweep / length(f.rda)
-t.pop = t.pop / length(f.rda)
+# t.pop = t.pop / length(f.rda)
 t.gir = t.gir / length(f.rda)
 t.ppavg = t.ppavg / length(f.rda)
 t.gen = t.gen / length(f.rda)
 t.hGene1 = (t.hGene2 <- rowsum(t.hGene[,-1], t.hGene[,1]))/as.vector(table(t.hGene[,1]))
 
-save(famTree, h.sweep, t.pop, t.gir, t.ppavg, t.gen, t.hGene1, t.hGene2, file = paste0("../data/sum_",argv,".rda"))
+save(famTree, h.sweep, t.gir, t.ppavg, t.gen, t.hGene1, t.hGene2, file = paste0("../data/sum_",argv,".rda")) #, t.pop
 

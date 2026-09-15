@@ -49,18 +49,18 @@ idx = match(seq_len(nrow(rec.tpnGene.df)), as.integer(rownames(tmp)))
 rec.tpnGene.df[!is.na(idx), -1] = tmp[idx[!is.na(idx)], , drop = F]
 
 ##### Transposon tag map #####
-cat(date(),": map transposon type dominance\n")
-if(length(table(a.tpn.df$uniqID))>1){
-  rec.uniqID = unique(a.tpn.df$uniqID)
-  rec.uniqID = cbind(rec.uniqID, as.data.frame(matrix(0, nrow = length(rec.uniqID), ncol = nrow(rec.transposon))))
-  colnames(rec.uniqID) = c("uniqID", paste0("gen",(1:nrow(rec.transposon))-1))
-  a.tpn.df$uMap = match(a.tpn.df$uniqID, rec.uniqID)
-  for(i in 1:nrow(rec.uniqID)){
-    rec.uniqID[i,-1] = colSums(rec.tpnTraject[which(a.tpn.df$uMap==i),-1])
-  };rm(i)
-}else{
-  rec.uniqID = cbind(names(table(a.tpn.df$uniqID)), colSums(rec.tpnTraject[,-1]))
-}
+# cat(date(),": map transposon type dominance\n")
+# if(length(table(a.tpn.df$uniqID))>1){
+#   rec.uniqID = unique(a.tpn.df$uniqID)
+#   rec.uniqID = cbind(rec.uniqID, as.data.frame(matrix(0, nrow = length(rec.uniqID), ncol = nrow(rec.transposon))))
+#   colnames(rec.uniqID) = c("uniqID", paste0("gen",(1:nrow(rec.transposon))-1))
+#   a.tpn.df$uMap = match(a.tpn.df$uniqID, rec.uniqID)
+#   for(i in 1:nrow(rec.uniqID)){
+#     rec.uniqID[i,-1] = colSums(rec.tpnTraject[which(a.tpn.df$uMap==i),-1])
+#   };rm(i)
+# }else{
+#   rec.uniqID = cbind(names(table(a.tpn.df$uniqID)), colSums(rec.tpnTraject[,-1]))
+# }
 
 ##### Gene recombination mechanism hit ratio #####
 hPos = grep(gsub(";","|",inFile$params$Value[inFile$params$Type=="genes for recombination mechanism"]), unlist(rec.transposon))
@@ -84,4 +84,4 @@ rownames(gRecom.hitRatio) = NULL
 ##### Host genome phylogenetics ##### !!!
 
 ##### Export #####
-save(gEnealogy, rec.tpn, rec.hostTraject, rec.tpnTraject, rec.tpnGene.df, rec.uniqID, gRecom.hitRatio, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+save(gEnealogy, rec.tpn, rec.hostTraject, rec.tpnTraject, rec.tpnGene.df, gRecom.hitRatio, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz") #, rec.uniqID

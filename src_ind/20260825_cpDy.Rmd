@@ -5,7 +5,8 @@ date: "20260825"
 output: html_document
 ---
 
-```{r, label='Data extraction', echo=F, message=F, warning=F}
+```{r, label='Data extraction', echo=F, message=F, warning=F, eval=TRUE, include=FALSE}
+# https://uoepsy.github.io/scs/rmd-bootcamp/05-echoeval.html?panelset1=eval-%253D-false
 # date;Rscript -e "rmarkdown::render('20260825_cpDy.Rmd', output_dir='../upload', intermediates_dir='../work')";date
 #pAr = c(recom = 0, tEf = F, geno = 0)
 pAr = c(recom = pAra1, tEf = pAra2, geno = pAra3)
@@ -34,7 +35,7 @@ date();for(i in seq_len(nrow(gEt0))){ # 7 mins
     h.sweep = cbind(hEad0, h.sweep)
     t.gen = cbind(hEad0, t.gen)
     t.gir = cbind(hEad0, t.gir)
-    t.pop = cbind(hEad0, t.pop)
+    # t.pop = cbind(hEad0, t.pop)
     t.ppavg = cbind(hEad0, t.ppavg)
     t.hGene1 = t(t.hGene1)
     t.hGene2 = t(t.hGene2)
@@ -46,12 +47,12 @@ date();for(i in seq_len(nrow(gEt0))){ # 7 mins
         hSw = rbind(hSw, h.sweep)
         tGen = rbind(tGen, t.gen)
         tGir = rbind(tGir, t.gir)
-        tPp = rbind(tPp, t.pop)
+        # tPp = rbind(tPp, t.pop)
         tAv = rbind(tAv, t.ppavg)
         tH1 = merge(tH1, t.hGene1, all = T)
         tH2 = merge(tH2, t.hGene2, all = T)
     }else{
-        fT0 = famTree; hSw = h.sweep; tGen = t.gen; tGir = t.gir; tPp = t.pop; tAv = t.ppavg; tH1 = t.hGene1; tH2 = t.hGene2
+        fT0 = famTree; hSw = h.sweep; tGen = t.gen; tGir = t.gir; tAv = t.ppavg; tH1 = t.hGene1; tH2 = t.hGene2 #; tPp = t.pop
     }
 };rm(i);cat("\n")
 
@@ -139,7 +140,7 @@ ggplot(data = tGir) +
 
 ### log10 Total sequence copy number (tPp)
 
-```{r, label='Tot seq cpNum', echo=FALSE, message=FALSE}
+```{r 'Tot seq cpNum', echo=FALSE, message=FALSE, eval=FALSE, include=FALSE}
 ggplot(data = tPp) +
   geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = log10(t.pop+1))) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
