@@ -22,7 +22,7 @@ rec.hostTraject = fAmily(r.os0)/ncol(r.os0)
 
 ##### Transposon perspective map #####
 # cat(date(),": map transposon dominance\n")
-# a.tpn = unique(unlist(strsplit(unlist(rec.transposon), ";")))
+a.tpn = unique(unlist(strsplit(unlist(rec.transposon), ";")))
 # rec.tpnTraject = cbind(a.tpn, as.data.frame(matrix(0, nrow = length(a.tpn), ncol = nrow(rec.transposon))))
 # colnames(rec.tpnTraject) = c("transposon", paste0("gen",seq_len(nrow(rec.transposon))-1))
 # tpnSplit = lapply(seq_len(nrow(rec.transposon)), function(i){
