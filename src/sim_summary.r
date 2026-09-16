@@ -44,9 +44,9 @@ rec.tpnGene.df = unique(substr(a.tpn.df$gene,3,nchar(a.tpn.df$gene)))
 rec.tpnGene.df = cbind(rec.tpnGene.df, as.data.frame(matrix(0, nrow = length(rec.tpnGene.df), ncol = nrow(rec.transposon))))
 colnames(rec.tpnGene.df) = c("gene", paste0("gen",(1:nrow(rec.transposon))-1))
 a.tpn.df$map = match(substr(a.tpn.df$gene,3,nchar(a.tpn.df$gene)), rec.tpnGene.df$gene)
-tmp = rowsum(as.matrix(rec.tpnTraject[,-1]), group = a.tpn.df$map, reorder = T)
-idx = match(seq_len(nrow(rec.tpnGene.df)), as.integer(rownames(tmp)))
-rec.tpnGene.df[!is.na(idx), -1] = tmp[idx[!is.na(idx)], , drop = F]
+# tmp = rowsum(as.matrix(rec.tpnTraject[,-1]), group = a.tpn.df$map, reorder = T)
+# idx = match(seq_len(nrow(rec.tpnGene.df)), as.integer(rownames(tmp)))
+# rec.tpnGene.df[!is.na(idx), -1] = tmp[idx[!is.na(idx)], , drop = F]
 
 ##### Transposon tag map #####
 # cat(date(),": map transposon type dominance\n")
