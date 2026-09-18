@@ -77,6 +77,7 @@ gEn = 0; repeat{
   rec.host[gEn + 1,] = sim.df$host
   rec.transposon[gEn + 1,] = sim.df$transposon
   rec.offspring[gEn + 1,] = sim.df$familyTree
+  if(((gEn %% 10) == 0) | (gEn > 300)){ save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz") }
 
   gEn = gEn + 1; if(gEn > gEn.max){ break } # simulation done
 #  cat(date(),": generation",gEn,"\n")
@@ -145,6 +146,6 @@ if(eLim > 0){
   save(rec.host, rec.transposon, rec.offspring, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
 
 }else{ if(eLim == -1){tGt = "Transposons"}else{tGt = "Host population"}
-  cat(date(),":",tGt," eliminated: gen",gEn,"; no results exported despite simulation completed",argv[3],"-",argv[5],"\n")
+  cat(date(),":",tGt," eliminated: gen",gEn,"; no final results exported despite simulation completed",argv[3],"-",argv[5],"\n")
 }
 # c0 = rep(0,nrow(rec.transposon));for(i in seq_len(length(c0))){c0[i] = length(unlist(strsplit(as.character(rec.transposon[i,]), ";")))};rm(i);plot(x = seq_len(length(c0)), y = c0, cex = .1)
