@@ -13,5 +13,5 @@ transposon population size per genome distribution,poisson,uniform / normal / po
 percentage transposon perturbation genotoxic,0.1,
 percentage chance transposon perturbation boost,80,
 percentage amplitude transposon perturbation boost,150,
-full result,no,yes/no (11 evenly-distributed generations would be exported)
+full result,yes,yes/no (11 evenly-distributed generations would be exported)
 export transposon elimination,no,yes/no
