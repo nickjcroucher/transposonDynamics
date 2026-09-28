@@ -72,4 +72,4 @@ hOst = row.names(a0)[which(a0$recom == 0 & a0$recomH1 == "switch" & a0$cell == "
 
 res = which(sCe$transposon %in% tPn & sCe$host %in% hOst) #data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
 res = as.data.frame(cbind(rep(seq_len(10), each = length(res)), res))
-write.table(res, "../data/rerun.csv", row.names = F, col.names = F, quote = F)
+write.table(res, "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)

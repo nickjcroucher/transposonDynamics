@@ -8,7 +8,7 @@
 # date: 20260623
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "288932")}
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
