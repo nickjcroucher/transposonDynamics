@@ -5,7 +5,7 @@
 # in: source("func.r")
 # out: NA
 # arg: NA
-# date: 20260623
+# date: 20260623, 20260928
 
 ##### Constants #####
 tPn.0 = read.csv("../raw/template-tpn.csv", header = T)
@@ -60,50 +60,18 @@ inParams = function(pArams = "../raw/input.csv"){
 
   ## transposon titre initiation
   tAg = "transposon population size per genome sd"
-  tPn.pop = round(1/(rNumVec(
-    f = pMs$Value[pMs$Type==sub(" sd", " distribution", tAg)],
-    L = pMs$Value[pMs$Type=="host organism constant population size"],
-    p1 = pMs$Value[pMs$Type==sub(" sd", " mean", tAg)],
-    p2 = pMs$Value[pMs$Type==tAg]))-1,0)
-  repeat{
-    t00 = which(tPn.pop < 1)
-    tPn.pop[t00] = round(1/(rNumVec(
-      f = pMs$Value[pMs$Type==sub(" sd", " distribution", tAg)],
-      L = length(t00),
-      p1 = pMs$Value[pMs$Type==sub(" sd", " mean", tAg)],
-      p2 = pMs$Value[pMs$Type==tAg]))-1,0)
-    if(length(t00) < 1){break}
-  }
+  tAg.pop = as.numeric(c(pMs$Value[pMs$Type=="host organism constant population size"], pMs$Value[pMs$Type==sub(" sd", " mean", tAg)]))
+  tPn.pop = rpois(tAg.pop[1], tAg.pop[2])
+  while(any(tPn.pop < 1)){ tPn.pop[tPn.pop < 1] = rpois(sum(tPn.pop < 1), tAg.pop[2]) }
+
   return(list(params = pMs, gene = gEne, transposon.titre = tPn.pop, genome = sum(c(gEne$length,gEne$interLength))))
 }
 
 ##### Initiate genome pool #####
-ini.host = function(host.var, gene.df, gene.var){
-  nGene = nrow(gene.df)/2
-  if(length(grep(";", gene.var))>0){gene.var = strsplit(gene.var, ";")[[1]]}
-  gene.var = as.numeric(gene.var)
-  if(any(gene.var > length(LETTERS))){
-    gene.var[gene.var > length(LETTERS)] = length(LETTERS)
-    warning(paste0("Too many alleles stated for genes ",paste(which(gene.var > length(LETTERS)), collapse = ","), " reset to ", length(LETTERS), ".\n"))
-  }
-  if(any(gene.var < 1)){
-    gene.var[gene.var < 1] = 1
-    warning(paste0("Too few alleles stated for genes ",paste(which(gene.var < 1), collapse = ","), " reset to 1.\n"))
-  }
-  if(!(length(gene.var) %in% c(1,nGene))){
-    if(length(gene.var) > nGene){
-      warning(paste0("Too many notations, extra ones are ignored. You provided ",length(gene.var), " gene variation notations, your gff file only has ",nGene, " genes."))
-      gene.var = gene.var[1:nGene]
-    }else{
-      stop(paste0("Either one variation or specify variations for each gene in the genome. You only provided ",length(gene.var), " gene variation notations, your gff file has ",nGene, " genes."))
-    }
-  }else if(length(gene.var)==1){gene.var = rep(gene.var, nGene)}
-  hOst = matrix(NA,nrow = as.numeric(host.var), ncol = nGene)
-  for(i in 1:ncol(hOst)){ hOst[,i] = sample(LETTERS[1:gene.var[i]], size = host.var, replace = T)};rm(i)
-  rEcessive = matrix(runif(prod(dim(hOst))), ncol = ncol(hOst))>.5
-  hOst[rEcessive] = tolower(hOst[rEcessive])
-  hOst.compact = apply(hOst, 1, function(x){paste0(x, collapse = "")})
-  return(hOst.compact)
+ini.host = function(nGenes, host.var, gene.var){
+  gene.var = max(min(gene.var, length(letters)), 1)
+  h0 = matrix(sample(c(LETTERS[seq_len(gene.var)], letters[seq_len(gene.var)]), host.var*nGenes, replace = T), nrow = host.var)
+  return(apply(h0, 1, paste0, collapse = ""))
 }
 
 ##### Rescale random number #####
@@ -114,47 +82,30 @@ tPn.io = function(x, ref = tPn.0){
   if(class(x)=="data.frame"){
     x$paste = apply(x,1,function(x0){paste(x0, collapse = "!")})
     return(gsub(" ", "", paste(x$paste, collapse = ";")))
+  }else{
+    return(read.table(text = gsub(";", "\n", paste0(x, collapse = ";"), fixed = T), sep = "!", header = F, quote = "", comment.char = "", col.names = colnames(ref)))
   }
-  if(length(grep(";",x))>0){
-    x = read.table(text = strsplit(x, ";")[[1]], sep = "!")
-    colnames(x) = colnames(ref)
-    return(x)
-  }
-  if(length(grep("!",x))>0){
-    x = strsplit(x, "!")[[1]]
-    names(x) = colnames(ref)
-    return(x)
-  }
-  if(length(x)==ncol(ref)){return(gsub(" ", "", paste(x, collapse = "!")))}
-  stop("Provided ",length(x)," value(s) but ",ncol(ref)," values are needed: ",paste(colnames(ref), collapse = ", "),".")
 }
 
 ##### Reconstruct gene table (one host) #####
 reGeneDF = function(tPn, gene.df){
-  if(tPn != ""){
-    tPn = strsplit(tPn, ";")[[1]]
-    for(i in 1:length(tPn)){
-      i0 = tPn.io(tPn[i])
-      i1 = which(gene.df$locus_tag == substr(i0[1],2,nchar(i0[1])))
-      if(substr(i0[1],1,1) == "g"){
-        gene.df$length[i1] = gene.df$length[i1] + as.numeric(i0[6])
-        if(i1<nrow(gene.df)){
-          gene.df$start[(i1+1):nrow(gene.df)] = gene.df$start[(i1+1):nrow(gene.df)] + as.numeric(i0[6])
-        }
-      }else{
-        gene.df$interLength[i1] = gene.df$interLength[i1] + as.numeric(i0[6])
-        gene.df$start[i1:nrow(gene.df)] = gene.df$start[i1:nrow(gene.df)] + as.numeric(i0[6])
-      }
-      gene.df$end[i1:nrow(gene.df)] = gene.df$end[i1:nrow(gene.df)] + as.numeric(i0[6])
-  };rm(i)}
+  if(tPn==""){return(gene.df)}
+  tPn = tPn.io(tPn)
+  tPn$cOl = match(ifelse(substr(tPn$gene, 1, 1)=="g","length","interLength"), colnames(gene.df))
+  tPn$rOw = match(substr(tPn$gene, 2, nchar(tPn$gene)), gene.df$locus_tag)
+  t0 = aggregate(size ~ rOw + cOl, data = tPn, FUN = sum)
+  t1 = unique(t0$cOl)
+  for(i in seq_len(length(t1))){
+    gene.df[t0$rOw[which(t0$cOl==t1[i])], t1[i]] = gene.df[t0$rOw[which(t0$cOl==t1[i])], t1[i]] + t0$size[which(t0$cOl==t1[i])]
+  };rm(i)
   return(gene.df)
 }
 
 ##### New host population #####
 host.reproduce = function(res.pool, gene.df, cell = "haploid", transposonEffect = F){
-  # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
+  # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations; $tpnFail, genes that contain double strand break
   ## Calculate ecological fitness deficit
-  res.tmp = data.frame(host = unlist(read.table(text = res.pool$host, sep = ";")), transposon = NA, familyTree = unlist(read.table(text = res.pool$familyTree, sep = ";")), offspring.prob = 1)
+  res.tmp = data.frame(host = unlist(read.table(text = res.pool$host, sep = ";")), transposon = NA, familyTree = unlist(read.table(text = res.pool$familyTree, sep = ";")), offspring.prob = as.numeric(res.pool$tpnFail==""))
   for(i in seq_len(nrow(res.pool))){if(length(grep(";",res.pool$transposon[i]))>0){
     t.tmp = tPn.io(res.pool$transposon[i])
     t.tmp$nonessential = as.numeric(!(t.tmp$gene %in% paste0("g",gene.df$locus_tag[gene.df$fitness==0])))
@@ -169,7 +120,7 @@ host.reproduce = function(res.pool, gene.df, cell = "haploid", transposonEffect 
     if(sum(g0)>0){
       res.tmp$offspring.prob[i] = res.tmp$offspring.prob[i] * prod(t.tmp$nonessential[g0]) * (reZero(sum(t.tmp$advantage[g0]), new1 = sum(g0)*2) + sum(t.tmp$sizeeff[g0]))
       res.tmp$transposon[i] = tPn.io(t.tmp[g0,1:(ncol(t.tmp)-3)])
-    } #!!!
+    }
     if(sum(g0)<length(g0)){
       res.tmp$offspring.prob[nrow(res.pool) + i] = res.tmp$offspring.prob[nrow(res.pool) + i] * prod(t.tmp$nonessential[!g0]) * (reZero(sum(t.tmp$advantage[!g0]), new1 = sum(!g0)*2) + sum(t.tmp$sizeeff[!g0]))
       res.tmp$transposon[nrow(res.pool) + i] = tPn.io(t.tmp[!g0,1:(ncol(t.tmp)-3)])
@@ -186,9 +137,9 @@ host.reproduce = function(res.pool, gene.df, cell = "haploid", transposonEffect 
 
   ## if whole population cannot reproduce
   if(anyNA(res.tmp$offspring.prob)){ stop("host.reproduce: non-finite fitness at res.tmp row(s) ", paste(which(!is.finite(res.tmp$offspring.prob)), collapse = ",")) }
-  pSum = sum(res.tmp$offspring.prob)
+  pSum = sum(ifelse(res.tmp$offspring.prob < 0, 0, res.tmp$offspring.prob))
   if(pSum <= 0){ return(NULL) }
-  res.tmp$offspring.prob = res.tmp$offspring.prob/pSum
+  res.tmp$offspring.prob = max(res.tmp$offspring.prob,0)/pSum
 
   ## Sprouting offspring
   res.tmp$transposon[is.na(res.tmp$transposon)] = ""
@@ -208,6 +159,7 @@ host.reproduce = function(res.pool, gene.df, cell = "haploid", transposonEffect 
     offspring[offspring==0] = nrow(res.pool)
     o.tmp$familyTree = paste(offspring[,1], offspring[,2], sep = ";")
   }
+  o.tmp$tpnFail = ""
   return(o.tmp)
 }
 
@@ -248,14 +200,7 @@ tPn.reloc = function(tPn, gen, gene.df, tPn.prob=2){
 
   ## Update gene df
   gene.df$cumsum = NULL
-  if(tPn.cds){
-    gene.df$start[min(x+1, nrow(gene.df)):nrow(gene.df)] = gene.df$start[min(x+1, nrow(gene.df)):nrow(gene.df)] + as.numeric(tPn[6])
-    gene.df$length[x] = gene.df$length[x] + as.numeric(tPn[6])
-  }else{
-    gene.df$start[x:nrow(gene.df)] = gene.df$start[x:nrow(gene.df)] + as.numeric(tPn[6])
-    gene.df$interLength[x] = gene.df$interLength[x] + as.numeric(tPn[6])
-  }
-  gene.df$end[x:nrow(gene.df)] = gene.df$end[x:nrow(gene.df)] + as.numeric(tPn[6])
+  gene.df[x,ifelse(tPn.cds, "length", "interLength")] = gene.df[x,ifelse(tPn.cds, "length", "interLength")] + as.numeric(tPn[6])
   colnames(gene.df)[1] = paste0(tPn.io(tPn),";",colnames(gene.df)[1])
   return(gene.df)
 }
@@ -343,7 +288,7 @@ gene.recom = function(h1.t, h2.t, g2to1, locusTags){
 }
 
 ##### Gene recombination in host population, assume ascending order as recipients #####
-g.Recom = function(res.pool, gene.df, recomRate, hypothesis = "switch"){
+g.Recom = function(res.pool, gene.df, recomRate, hypothesis = "switch"){ # !!! (remove genes that are recombined from col tpnFail)
   # res.pool: 2 columns - $host, host genomes; $transposon, transposon notations
   if(hypothesis == "homeostatic"){
     numGenes = floor(lengths(strsplit(res.pool$transposon, ";")) * as.numeric(recomRate) * nrow(gene.df)) # gene recombination rate has a linear increase according to the number of transposons in the genome (homeostatic)
@@ -357,6 +302,7 @@ g.Recom = function(res.pool, gene.df, recomRate, hypothesis = "switch"){
   };rm(i)}
   numGenes[numGenes > (nrow(gene.df)-1)] = nrow(gene.df)-1 # random selection of genes can't exceed total number of genes in genome
 
+  gHit = strsplit(res.pool$tpnFail, ";")
   for(i in 1:nrow(res.pool)){ if(numGenes[i] > 0){
     gene.df$recom = 0
     x.gene = sample(1:nrow(gene.df), numGenes[i], replace = F) # which gene being recombined (origins)
@@ -366,6 +312,10 @@ g.Recom = function(res.pool, gene.df, recomRate, hypothesis = "switch"){
       gene.df$recom = gene.df$recom + 2^(-abs(gene.df$start - gene.df$start[i0])/1000)
     };rm(i0)
     gene.df$recom = gene.df$recom > gene.df$recomProb
+    if(res.pool$tpnFail[i]!=""){
+      gHit[[i]] = gHit[[i]][!(gHit[[i]] %in% paste0("g", gene.df$locus_tag[gene.df$recom]))]
+      res.pool$tpnFail[i] = paste0(gHit[[i]], collapse = ";")
+    }
 
     ## remove intragenic transposons if consecutive genes are recombined (host independent)
     if(length(grep("!", res.pool$transposon[i]))>0){if((length(grep("i0", res.pool$transposon[i])) + length(grep("i1", res.pool$transposon[i])))>0){
@@ -380,8 +330,12 @@ g.Recom = function(res.pool, gene.df, recomRate, hypothesis = "switch"){
       if(length(grep(";", res.pool$transposon[i]))>0){
         t.tmp$rm = t.tmp$gene %in% paste0("i",gene.df$locus_tag[gene.df$consecutive==2])
         res.pool$transposon[i] = tPn.io(t.tmp[!t.tmp$rm,-ncol(t.tmp)])
+        gHit[[i]] = gHit[[i]][!(gHit[[i]] %in% t.tmp$gene[t.tmp$rm])]
+        res.pool$tpnFail[i] = paste0(gHit[[i]], collapse = ";")
       }else{
-        if(t.tmp["gene"] %in% paste0("i",gene.df$locus_tag[gene.df$consecutive==2])){res.pool$transposon[i] = ""}
+        if(t.tmp["gene"] %in% paste0("i",gene.df$locus_tag[gene.df$consecutive==2])){
+          res.pool$transposon[i] = res.pool$tpnFail[i] = ""
+        }
     }}}
 
     ## Recombine genes

@@ -34,13 +34,14 @@ perturbGen[perturbGen==0] = gEn.max + 1 # a numeric placeholder that can never a
 
 ##### Initiate genomic variation in populations #####
 cat(date(),": initiate population",argv[3],"-",argv[5],"\n")
-hOst = ini.host(inFile$params$Value[inFile$params$Type=="host genome variation"], inFile$gene, inFile$params$Value[inFile$params$Type=="host genetic variation"])
+hOst = ini.host(nrow(inFile$gene)/2, as.numeric(inFile$params$Value[inFile$params$Type=="host genome variation"]), as.numeric(inFile$params$Value[inFile$params$Type=="host genetic variation"]))
 tPn = data.frame(ini = strsplit(tPn.io(tPn.0), ";")[[1]], uniqID = tPn.0$uniqID, size = tPn.0$size)
 
 ##### Initiate record dataframes #####
 rec.host = rec.transposon = rec.offspring = as.data.frame(matrix(NA, nrow = gEn.max + 1, ncol = as.numeric(inFile$params$Value[inFile$params$Type=="host organism constant population size"])))
-sim.df = as.data.frame(matrix(NA, nrow = ncol(rec.host), ncol = 3))
-colnames(sim.df) = c("host", "transposon", "familyTree")
+sim.df.col = c("host", "transposon", "familyTree", "tpnFail")
+sim.df = as.data.frame(matrix("", nrow = ncol(rec.host), ncol = length(sim.df.col)))
+colnames(sim.df) = sim.df.col; rm(sim.df.col)
 
 ##### Initial population #####
 ## Genotypes
@@ -90,7 +91,7 @@ gEn = 0; repeat{
   ### 1. Set jumping indicators
   tPn.sums = lengths(tPn.list <- strsplit(sim.df$transposon, ";"))
   # sim.df0 = sim.df
-  for(i in 1:nrow(sim.df)){
+  for(i in seq_len(nrow(sim.df))){
 
   ### 2. Reconstruct transposon-inserted gene table
     g.tmp = reGeneDF(tPn = sim.df$transposon[i], gene.df = inFile$gene)
@@ -98,18 +99,26 @@ gEn = 0; repeat{
     if(tPn.sums[i] > 0){
   ### 3. Map indicators with transposon locations
       tPn.tag = tPn.io(sim.df$transposon[i])
+      tPn.tag$autoRecomFail = runif(tPn.sums[i]) > host.0$homologousAutoRecom # fail to recombine if transposon movement
       if(class(tPn.tag)=="data.frame"){
         tPn.tag$eq = paste0(substr(tPn.tag$gene,1,1), abs(as.numeric(substr(tPn.tag$gene,2,2))-1), substr(tPn.tag$gene,3,nchar(tPn.tag$gene)))
       }
       for(i1 in seq_len(tPn.sums[i])){
         if(class(tPn.tag)=="character"){
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag), equivalent = F, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[-(-1:0 + ncol(tPn.tag))]), equivalent = F, gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }else{
-          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-ncol(tPn.tag)]), equivalent = ifelse(host.0$homologousAutoRecom, tPn.tag$eq[i1] %in% tPn.tag$gene,F), gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
+          g.tmp = tPn.act(tPn = tPn.io(tPn.tag[i1,-(-1:0 + ncol(tPn.tag))]), equivalent = ifelse(tPn.tag$autoRecomFail[i1], tPn.tag$eq[i1] %in% tPn.tag$gene,F), gen = gEn, gene.df = g.tmp, pAram = gPrm, gToxic = gEn %in% perturbGen)
         }
         tPn.list[[i]][i1] = tPn.get(g.tmp)
         colnames(g.tmp)[1] = tPn.get(g.tmp, F)
       };rm(i1)
+
+      sim.Ori = strsplit(sim.df$transposon[i], ";")[[1]]
+      sim.Fin = strsplit(tPn.io(tPn.tag[tPn.tag$autoRecomFail,-(-1:0 + ncol(tPn.tag))]), ";")[[1]]
+      sim.Ori = sim.Ori[!(sim.Ori %in% sim.Fin)] # which transposon had activity
+      if(length(sim.Ori) > 0){
+        sim.df$tpnFail[i] = gsub(" ","", paste0(tPn.io(sim.Ori)$gene, collapse = ";"))
+      }
 
   ### 4. Validate each transposon
       if(length(tPn.list[[i]])>0){

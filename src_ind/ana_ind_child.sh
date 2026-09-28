@@ -7,7 +7,7 @@
 # arg: 0
 # date: 20260716
 
-# BSUB -G team377f
+# BSUB -G ph17g
 # BSUB -o ../work/pj02-%J-%I.o
 # BSUB -e ../work/pj02-%J-%I.e
 # BSUB -q week

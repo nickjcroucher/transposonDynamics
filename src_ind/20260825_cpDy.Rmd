@@ -9,6 +9,7 @@ output: html_document
 # https://uoepsy.github.io/scs/rmd-bootcamp/05-echoeval.html?panelset1=eval-%253D-false
 # date;Rscript -e "rmarkdown::render('20260825_cpDy.Rmd', output_dir='../upload', intermediates_dir='../work')";date
 #pAr = c(recom = 0, tEf = F, geno = 0)
+nUd = 1e-5
 pAr = c(recom = pAra1, tEf = pAra2, geno = pAra3)
 
 cBar = c("#ffffffff", "#ff00ffff")
@@ -17,13 +18,16 @@ for(i in c("gganimate")){suppressPackageStartupMessages(library(i, character.onl
 source("colour.r")
 f0 = list.files("../data", pattern = paste0("sum_.*\\.rda$"), full.names = T)
 b0 = list.files("../upload", full.names = T)
-tpn = read.csv(b0[grep("tpn", b0)], header = T)
-hOst = read.csv(b0[grep("host", b0)], header = T)
+tpn = read.csv(b0[grep("-tpn.csv", b0)], header = T)
+hOst = read.csv(b0[grep("-host.csv", b0)], header = T)
 sCe = read.csv(b0[grep("scenario", b0)], header = T)
-gEt0 = sCe[sCe$host %in% as.numeric(row.names(hOst[which(hOst$recom==pAr[1] & hOst$transposonEffect==as.logical(pAr[2]) & hOst$genotoxic==pAr[3]),])),]
-f0.get = f0[grep(gsub("@", "\\|", paste0(paste0("_",row.names(gEt0),"\\.rda"), collapse = "|")), f0)]
-f0.get = data.frame(fNam = f0.get, sce = read.table(text = gsub("[.]rd", "@", gsub("_", "@", f0.get)), sep = "@")[,2])
-gEt0 = cbind(gEt0,tpn[match(gEt0$transposon, tpn$uniqID),-(1:5)], hOst[unique(gEt0$host),], f0.get$fNam[match(row.names(gEt0), f0.get$sce)])
+f0.get = data.frame(num=read.table(text = gsub("m_","@",gsub(".rd", "@", f0)), sep = "@")[,2], fNam = f0)
+gEt0 = cbind(tpn[match(sCe$transposon, tpn$uniqID),-(1:5)], hOst[unique(sCe$host),])
+gEt0$fNam = f0.get$fNam[match(row.names(sCe), f0.get$num)]
+# gEt0 = sCe[sCe$host %in% as.numeric(row.names(hOst[which(hOst$recom==pAr[1] & hOst$transposonEffect==as.logical(pAr[2]) & hOst$genotoxic==pAr[3]),])),]
+# f0.get = f0[grep(gsub("@", "\\|", paste0(paste0("_",row.names(gEt0),"\\.rda"), collapse = "|")), f0)]
+# f0.get = data.frame(fNam = f0.get, sce = read.table(text = gsub("[.]rd", "@", gsub("_", "@", f0.get)), sep = "@")[,2])
+# gEt0 = cbind(gEt0,tpn[match(gEt0$transposon, tpn$uniqID),-(1:5)], hOst[unique(gEt0$host),], f0.get$fNam[match(row.names(gEt0), f0.get$sce)])
 kEep = vapply(gEt0, function(x) length(unique(x)) > 1, logical(1))
 gEt0 = gEt0[kEep];rm(kEep)
 
@@ -81,10 +85,10 @@ for(i in seq_len(nrow(tH1))){
 
 ```{r, label='Genealogy', echo=FALSE, message=FALSE}
 fT0$hex = rgb(fT0[c("V1", "V2", "V3")])
-ggplot(data = fT0, aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = hex)) +
+ggplot(data = fT0, aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = hex)) +
   geom_tile() + scale_fill_identity() +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
   enter_fade() + 
@@ -96,9 +100,9 @@ ggplot(data = fT0, aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = hex)
 
 ```{r, label='Most successful parent', echo=FALSE, message=FALSE}
 ggplot(data = hSw) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = h1)) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = h1)) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
@@ -112,9 +116,9 @@ ggplot(data = hSw) +
 
 ```{r, label='Highest cpNum tpn gen', echo=FALSE, message=FALSE}
 ggplot(data = tGen) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = maxG)) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = maxG)) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
@@ -127,9 +131,9 @@ ggplot(data = tGen) +
 
 ```{r, label='Coding/intergenic', echo=FALSE, message=FALSE}
 ggplot(data = tGir) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = t.gir)) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = t.gir)) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
@@ -142,9 +146,9 @@ ggplot(data = tGir) +
 
 ```{r 'Tot seq cpNum', echo=FALSE, message=FALSE, eval=FALSE, include=FALSE}
 ggplot(data = tPp) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = log10(t.pop+1))) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = log10(t.pop+1))) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
@@ -157,9 +161,9 @@ ggplot(data = tPp) +
 
 ```{r, label='Avg seq cpNum', echo=FALSE, message=FALSE}
 ggplot(data = tAv) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = t.ppavg)) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = t.ppavg)) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradient(low = cBar[1], high = cBar[2], guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
@@ -172,9 +176,9 @@ ggplot(data = tAv) +
 
 ```{r, label='Max avg tpn-residing gene', echo=FALSE, message=FALSE}
 ggplot(data = tH1) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = maxG)) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = maxG)) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradientn(colours = hcl.colors(20, "Zissou 1"), guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
@@ -187,9 +191,9 @@ ggplot(data = tH1) +
 
 ```{r, label='Max tot tpn-residing gene', echo=FALSE, message=FALSE}
 ggplot(data = tH2) +
-  geom_tile(aes(x = log10(jump+1e-16), y = log10(copy+1e-16), fill = maxG)) +
+  geom_tile(aes(x = log10(jump+nUd), y = log10(copy+nUd), fill = maxG)) +
   labs(x = "log10( Excise rate )", y = "log10( Copy rate )") +
-  geom_text(aes(x = max(log10(jump+1e-16)), y = max(log10(copy+1e-16)), label = paste0("Generation ", generation))) +
+  geom_text(aes(x = max(log10(jump+nUd)), y = max(log10(copy+nUd)), label = paste0("Generation ", generation))) +
   scale_fill_gradientn(colours = hcl.colors(20, "Zissou 1"), guide = "colorbar") +
   theme_bw() +
   transition_states(generation, transition_length = 2, state_length = 1) +
