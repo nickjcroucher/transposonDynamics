@@ -54,41 +54,9 @@ fAmily = function(tree.df){
   P = matrix(0, K, nPop); j = seq_len(nPop)
   for(k in 1:2){ idx = cbind(match(par[k,,1], src), j); P[idx] = P[idx] + .5 }
   out = matrix(0, nGen, K); out[1,] = rowSums(P)
-  for(i in 2:nGen){
-    P = (P[, par[1,,i], drop=F] + P[, par[2,,i], drop=F])/2
+  if(nGen > 1){ for(i in 2:nGen){
+    P = (P[, par[1,,i] - ifelse(par[1,,i] > nPop, nPop, 0), drop=F] + P[, par[2,,i] - ifelse(par[2,,i] > nPop, nPop, 0), drop=F])/2
     out[i,] = rowSums(P)
-  }
+  }}
   as.data.frame(out)
-}
-
-##### f: Get transposon generations #####
-tpn.gen = function(x, ref = tPn.0){
-  nG = nrow(x); nP = ncol(x); nF = ncol(ref)
-  iGen = which(colnames(ref) == "generation")
-  cnt  = matrix(0, nG, nP)
-  tgen = matrix(0, nG, nG)
-  dist = matrix(0, nG, 2, dimnames = list(NULL, c("g","i")))
-  for(i in seq_len(nG)){
-    cells = as.character(unlist(x[i,], use.names = F))
-    keep  = nzchar(cells)
-    if(!any(keep)) next
-    tok.l   = strsplit(cells, ";", fixed = T)
-    cnt[i,] = lengths(tok.l) * keep
-    tok = unlist(tok.l, use.names = F); tok = tok[nzchar(tok)]
-    if(!length(tok)) next
-    sp = strsplit(tok, "!", fixed = T)
-    if(any(lengths(sp) != nF)){ stop("malformed transposon record at generation ", i-1) }
-    fld = matrix(unlist(sp, use.names = F), nrow = nF)
-    tgen[i,] = tabulate(as.integer(fld[iGen,]) + 1, nbins = nG)
-    pfx = substr(tok, 1, 1)
-    dist[i,] = c(sum(pfx == "g"), sum(pfx == "i"))
-  }
-  return(list(count = as.data.frame(cnt), generation = as.data.frame(tgen), distribution = as.data.frame(dist)))
-}
-
-##### f: Default loading simulation result file #####
-simLoad = function(x){
-  load(x)
-  tpn = tpn.gen(rec.transposon)
-  return(list(host = rec.host, transposon = rec.transposon, tpn.count = tpn$count, tpn.generation = tpn$generation, tpn.distribution = tpn$distribution, genealogy = fAmily(rec.offspring)/ncol(rec.offspring)))
 }

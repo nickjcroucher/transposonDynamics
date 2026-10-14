@@ -1,0 +1,122 @@
+Accession	Name	Short Name	Source Database	Type	Integrated Into	Integrated Signatures	GO Terms
+PF00075	RNase H	RNase_H	pfam	domain	IPR002156		
+PF00665	Integrase core domain	rve	pfam	domain	IPR001584		
+PF00872	Transposase, Mutator family	Transposase_mut	pfam	family	IPR001207		
+PF00929	Exonuclease	RNase_T	pfam	domain	IPR013520		
+PF01351	Ribonuclease HII	RNase_HII	pfam	domain	IPR024567		
+PF01359	Transposase (partial DDE domain)	Transposase_1	pfam	family	IPR001888		
+PF01385	Probable transposase	OrfB_IS605	pfam	family	IPR001959		
+PF01526	Tn3 transposase DDE domain	DDE_Tnp_Tn3	pfam	domain	IPR002513		
+PF01548	Transposase	DEDD_Tnp_IS110	pfam	domain	IPR002525		
+PF01609	Transposase DDE domain	DDE_Tnp_1	pfam	domain	IPR002559		
+PF01610	Transposase	DDE_Tnp_ISL3	pfam	family	IPR002560		
+PF01612	3'-5' exonuclease	DNA_pol_A_exo1	pfam	domain	IPR002562		
+PF01949	Endonuclease dU	Endo_dU	pfam	family	IPR002802		
+PF02075	Crossover junction endodeoxyribonuclease RuvC	RuvC	pfam	domain	IPR002176		
+PF02171	Piwi domain	Piwi	pfam	domain	IPR003165		
+PF02281	Transposase Tn5 dimerisation domain	Dimer_Tnp_Tn5	pfam	domain	IPR003201		
+PF02482	Sigma 54 modulation protein / S30EA ribosomal protein	Ribosomal_S30AE	pfam	domain	IPR003489		
+PF02870	6-O-methylguanine DNA methyltransferase, ribonuclease-like domain	Methyltransf_1N	pfam	domain	IPR008332		
+PF02914	Bacteriophage Mu transposase	DDE_2	pfam	domain	IPR004189		
+PF02992	Transposase family tnp2	Transposase_21	pfam	family	IPR004242		
+PF03050	Transposase IS66 family	DDE_Tnp_IS66	pfam	family	IPR004291		
+PF03104	DNA polymerase family B, exonuclease domain	DNA_pol_B_exo1	pfam	family	IPR006133		
+PF03184	DDE superfamily endonuclease	DDE_1	pfam	family	IPR004875		
+PF03400	IS1 transposase	DDE_Tnp_IS1	pfam	family	IPR005063		
+PF04250	Protein of unknown function (DUF429)	DUF429	pfam	family	IPR007362		
+PF04308	Ribonuclease H-like	RNaseH_like	pfam	family	IPR007405		
+PF04493	Endonuclease V	Endonuclease_5	pfam	domain	IPR007581		
+PF04693	Archaeal putative transposase ISC1217	DDE_Tnp_2	pfam	family	IPR006783		
+PF04827	Plant transposon protein	Plant_tran	pfam	family	IPR006912		
+PF04848	Poxvirus A22 protein	Pox_A22	pfam	family	IPR006932		
+PF04857	CAF1 family ribonuclease	CAF1	pfam	family	IPR006941		
+PF04937	Domain of unknown function (DUF659)	DUF659	pfam	domain	IPR007021		
+PF05188	MutS domain II	MutS_II	pfam	domain	IPR007860		
+PF05380	Pao retrotransposon-like RNaseH-like domain	Pao_retrotransp	pfam	domain	IPR008042		
+PF06333	Mediator complex subunit 13 C-terminal domain	Med13_C	pfam	domain	IPR009401		
+PF06485	RNA-binding protein Tab2/Atab2 N terminal	Tab2-like_N	pfam	domain	IPR046760		
+PF06782	Uncharacterised protein family (UPF0236)	UPF0236	pfam	family	IPR009620		
+PF06869	Protein of unknown function (DUF1258)	DUF1258	pfam	family	IPR009667		
+PF07066	Lactococcus phage M3 protein	DUF3882	pfam	family	IPR009773		
+PF07592	Rhodopirellula transposase DDE domain	DDE_Tnp_ISAZ013	pfam	domain	IPR011518		
+PF08459	UvrC RNAse H endonuclease domain	UvrC_RNaseH_dom	pfam	domain	IPR001162		
+PF09153	Methylated DNA-protein cysteine methyltransferase, N-terminal	MGMT_N	pfam	domain	IPR015236		
+PF09159	Mitochondrial resolvase Ydc2 / RNA splicing MRS1	Ydc2-catalyt	pfam	domain	IPR015242		
+PF09281	Taq polymerase, exonuclease	Taq-exonuc	pfam	domain	IPR015361		
+PF09376	NurA domain	NurA	pfam	domain	IPR018977		
+PF09974	Uncharacterized protein conserved in archaea (DUF2209)	DUF2209	pfam	family	IPR014514		
+PF10108	Predicted 3'-5' exonuclease related to the exonuclease domain of PolB	DNA_pol_B_exo2	pfam	family	IPR019288		
+PF10551	MULE transposase domain	MULE	pfam	domain	IPR018289		
+PF11074	Domain of unknown function (DUF2779)	DUF2779	pfam	domain	IPR021301		
+PF12134	PRP8 domain IV core	PRP8_domainIV	pfam	domain	IPR021983		
+PF12762	ISXO2-like transposase domain	DDE_Tnp_IS1595	pfam	domain	IPR024445		
+PF13017	piRNA pathway germ-plasm component	Maelstrom	pfam	family	IPR024970		
+PF13031	Protein of unknown function (DUF3892)	DUF3892	pfam	family	IPR024997		
+PF13333	Integrase core domain	rve_2	pfam	family	IPR001584		
+PF13358	DDE superfamily endonuclease	DDE_3	pfam	domain	IPR038717		
+PF13359	DDE superfamily endonuclease	DDE_Tnp_4	pfam	domain	IPR027806		
+PF13456	Reverse transcriptase-like	RVT_3	pfam	domain	IPR002156		
+PF13482	RNase_H superfamily	RNase_H_2	pfam	domain	IPR038720		
+PF13546	DDE superfamily endonuclease	DDE_5	pfam	domain	IPR038721		
+PF13586	Transposase DDE domain	DDE_Tnp_1_2	pfam	domain	IPR025668		
+PF13610	DDE domain	DDE_Tnp_IS240	pfam	domain	IPR032874		
+PF13612	Transposase DDE domain	DDE_Tnp_1_3	pfam	domain	IPR025668		
+PF13680	Protein of unknown function (DUF4152)	DUF4152	pfam	domain	IPR025206		
+PF13683	Integrase core domain	rve_3	pfam	domain	IPR001584		
+PF13701	Transposase DDE domain group 1	DDE_Tnp_1_4	pfam	domain	IPR025668		
+PF13737	Transposase DDE domain	DDE_Tnp_1_5	pfam	domain	IPR025668		
+PF13751	Transposase DDE domain	DDE_Tnp_1_6	pfam	domain	IPR025668		
+PF13843	Transposase IS4	DDE_Tnp_1_7	pfam	domain	IPR029526		
+PF14291	ZMYM1/FAM200, RNase-like domain	DUF4371	pfam	domain	IPR025398		
+PF16473	3'-5' exoribonuclease Rv2179c-like domain	Rv2179c-like	pfam	domain	IPR033390		
+PF17288	Terminase RNAseH like domain	Terminase_3C	pfam	domain	IPR035413		
+PF17289	Terminase RNaseH-like domain	Terminase_6C	pfam	domain	IPR035421		
+PF17290	Arenavirus nucleocapsid C-terminal domain	Arena_ncap_C	pfam	domain	IPR035084		
+PF17738	DUF5575 central RNaseH like domain	DUF5575	pfam	domain	IPR048315		
+PF17917	RNase H-like domain found in reverse transcriptase	RT_RNaseH	pfam	domain	IPR041373		
+PF17919	RNase H-like domain found in reverse transcriptase	RT_RNaseH_2	pfam	domain	IPR041577		
+PF18049	DNA polymerase nu pseudo-exo	DNA_pol_P_Exo	pfam	domain	IPR040940		
+PF18516	RuvC nuclease domain	RuvC_1	pfam	domain	IPR040852		
+PF18541	RuvC endonuclease subdomain 3	RuvC_III	pfam	domain	IPR041383		
+PF18758	Kyakuja-Dileera-Zisupton transposase	KDZ	pfam	family	IPR040521		
+PF18759	Plavaka transposase	Plavaka	pfam	family	IPR041078		
+PF20429	RNA-binding protein Tab2/Atab2, C-terminal domain	Tab2-like_C	pfam	domain	IPR046761		
+PF20441	Terminase large subunit, endonuclease domain	TerL_nuclease	pfam	domain	IPR046462		
+PF20700	Mutator-like transposase	Mutator	pfam	domain	IPR049012		
+PF21056	Zinc finger SWIM domain-containing protein 1/3, RNaseH-like domain	ZSWIM1-3_RNaseH-like	pfam	domain	IPR048324		
+PF21762	DNA polymerase III subunit epsilon-like, C-terminal domain	DEDDh_C	pfam	domain	IPR048519		
+PF21787	TNP-like, RNase H N-terminal domain	TNP-like_RNaseH_N	pfam	domain	IPR048365		
+PF21789	TNP-like, RNase H C-terminal domain	TNP-like_RNaseH_C	pfam	domain	IPR048367		
+PF21804	Transposase protein	Transposase_29	pfam	family	IPR049343		
+PF22007	Domain of unknown function (DUF6930)	DUF6930	pfam	domain	IPR054216		
+PF22016	Domain of unknown function (DUF6933)	DUF6933	pfam	domain	IPR053864		
+PF22123	Exuperantia RNAse H-like domain	Exu_RNase_H_like	pfam	domain	IPR054362		
+PF22126	C2c1 CRISPR-Cas endonuclease, RuvC-like domain	C2c1_RuvC-like	pfam	domain	IPR054011		
+PF22413	Methylated DNA-protein cysteine MeTransferase OGT N-terminal domain	OGT_N	pfam	domain	IPR055028		
+PF22474	Argonaute, middle domain	Ago_Mid	pfam	domain	IPR054763		
+PF22530	Terminase Bacteriophage T7, Ribonuclease H-like domain	Terminase-T7_RNaseH-like	pfam	domain	IPR054762		
+PF22619	DNA polymerase I, ribonuclease H-like domain	DNA_polI_exo1	pfam	domain	IPR054690		
+PF22702	Cas9 RuvC domain	Cas9_RuvC	pfam	domain	IPR055228		
+PF22920	UvrC Ribonuclease H-like domain	UvrC_RNaseH	pfam	domain	IPR001162		
+PF24764	Integrase core domain	rva_4	pfam	domain	IPR058913		
+PF25273	Domain of unknown function (DUF7869)	DUF7869	pfam	domain	IPR057191		
+PF26100	Recombination-activation protein 1 (RAG1) RNase H domain	RAG1_RNase_H	pfam	domain	IPR058554		
+PF26630	Domain of unknown function (DUF8203)	DUF8203	pfam	domain	IPR058516		
+PF26742	Domain of unknown function (DUF8247)	DUF8247	pfam	domain	IPR059291		
+PF27032	Domain of unknown function (DUF8340) N-terminal domain	DUF8340_N	pfam	domain			
+PF27035	MutS5 N-terminal domain	MutS5_N	pfam	domain	IPR060029		
+PF27036	Trehalose phosphorylase-like, N-terminal domain	TreT-like_N	pfam	domain	IPR060293		
+PF27037	Domain of unknown function (DUF8341)	DUF8341	pfam	domain	IPR059385		
+PF27038	Domain of unknown function (DUF8569)	DUF8569	pfam	domain			
+PF27039	ZBED1 RNase-like helical domain	ZBED1_RNase-like_helical	pfam	domain			
+PF27040	Domain of unknown function (DUF8342)	DUF8342	pfam	domain	IPR059386		
+PF27041	ZBED1 RNase-like domain	ZBED1_RNase-like	pfam	domain			
+PF27042	Domain of unknown function (DUF8343)	DUF8343	pfam	domain	IPR059387		
+PF27046	FAM200/GTF2IRD2 helical domain	FAM200-GTF2IRD2-like	pfam	domain			
+PF27073	FAM200/ZBED5 RNase-like	FAM200-ZBED5_RNase-like	pfam	domain			
+PF27608	ERVK-8-like, RNaseH-like domain	RNaseH_ERVK-8	pfam	domain	IPR060690		
+PF27940	Uncharacterized protein C21orf140-like	C21orf140-like	pfam	domain	IPR037728		
+PF29181	Hibernation factor Hib, C-terminal domain	Hib_C	pfam	domain	IPR064912		
+PF29688	TnsB C-terminal domain	TnsB_C	pfam	domain	IPR063619		
+PF30715	Domain of unknown function (DUF8701)	DUF8701	pfam	domain	IPR061762		
+PF30721	Domain of unknown function (DUF8703)	DUF8703	pfam	domain	IPR061764		

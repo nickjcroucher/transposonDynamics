@@ -32,12 +32,14 @@ colnames(a)[-(1:2)] = names(pAr)
 
 ## Set transposon uniqID
 cat(date(),": set transposon tags\n")
-uID.len = ceiling(log(nrow(a))/log(length(LETTERS)))
+uID.len = ceiling(log(nrow(a) + 5)/log(length(LETTERS))) # avoid special strings: NA, NAN, inf, TRUE, FALSE
 uID.set = as.data.frame(cbind(LETTERS, rep(LETTERS, each = length(LETTERS))))
 if(uID.len > 2){for(i in 3:uID.len){
    uID.set = cbind(uID.set, rep(LETTERS, each = nrow(uID.set)))
 };rm(i)}
-a$uniqID = apply(uID.set,1,paste0, collapse = "")[1:nrow(a)]
+aa = apply(uID.set,1,paste0, collapse = "")
+aa = aa[!(aa %in% c("NA", "NAN", "INF", "TRUE", "FALSE"))]
+a$uniqID = aa[seq_len(nrow(a))]; rm(aa)
 
 write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)
 
@@ -48,6 +50,7 @@ rEcH1 = c("switch", "homeostatic")
 pAr = list(
   cell = c("haploid", "diploid"),
   homologousAutoRecom = (seq_len(11)-1)/10,
+  hAReomH1 = c("fixed", "evolving"),
   transposonEffect = c(T,F),
   genotoxic = 0:4 # number of genotoxic events
 )
@@ -67,8 +70,8 @@ sCe = data.frame(transposon = a$uniqID, host = rep(row.names(a0), each = nrow(a)
 write.csv(sCe, "../raw/scenario.csv", row.names = F, quote = F)
 
 ##### Set rerun scenarios #####
-tPn = a$uniqID[which(a$jumpH1 == "fixed" & a$copyH1 == "fixed" & a$copyDir == "both")]
-hOst = row.names(a0)[which(a0$recom == 0 & a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom %in% c(0, .1, .5, .9, 1) & a0$transposonEffect == F & a0$genotoxic == 0)]
+tPn = a$uniqID[which(a$jumpRate == 0 & a$jumpH1 == "fixed" & a$copyRate == 0 & a$copyH1 == "fixed" & a$copyDir == "both")]
+hOst = row.names(a0)[which(a0$recom == 0 & a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom %in% c(0, 1) & a0$hAReomH1 == "fixed" & a0$transposonEffect == F & a0$genotoxic == 0)]
 
 res = which(sCe$transposon %in% tPn & sCe$host %in% hOst) #data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
 res = as.data.frame(cbind(rep(seq_len(10), each = length(res)), res))
