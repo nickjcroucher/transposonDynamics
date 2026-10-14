@@ -1,0 +1,51 @@
+# .github/workflows/test-simulation.yml
+# Runs test_simulation.r: unit, input-data and end-to-end tests of the transposon simulation.
+# Assumed layout at the repository root (as simulate.r expects):
+#   code/  func.r, func_analysis.r, simulate.r, sim_summary.r, test_simulation.r
+#   raw/   input.csv, seed.csv, scenario.csv, *-tpn.csv, *-host.csv
+#   data/  optional: <ref genome>.gff and the gene fitness file
+name: test-simulation
+
+on:
+  push:
+    branches: [main, master]        # change to your default branch if different
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      skip_integration:
+        description: "Skip the 16 end-to-end simulate.r runs (unit and input-data tests only)"
+        type: boolean
+        default: false
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-simulation:
+    name: test_simulation.r
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: code     # the folder holding the model scripts and test_simulation.r
+    steps:
+      - uses: actions/checkout@v6
+        # with:
+        #   lfs: true               # only if raw/ or data/ files are stored with Git LFS
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: any::testthat, any::withr
+
+      - name: Run test_simulation.r
+        env:
+          TPN_SKIP_INTEGRATION: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_integration }}
+        run: Rscript test_simulation.r
