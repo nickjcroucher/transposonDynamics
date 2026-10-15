@@ -70,7 +70,7 @@ g.Fit = g.Fit/rowSums(g.Fit)
 for(i in seq_len(ncol(g.Rec))){
   g.Rec[,i] = rowSums(tpn.gene[,colnames(tpn.gene) %in% g.Fit.ref$locus_tag[g.Fit.ref$recombination==(i-1)], drop = FALSE])
 };rm(i)
-g.Rec[,1] = log1p(g.Rec[,1]); g.Rec = g.Rec[,c(2,1)]
+g.Rec[,1] = log1p(g.Rec[,1]); g.Rec = g.Rec[,c(2,1), drop = FALSE]
 
 suppressWarnings(matplot(x = seq_len(nrow(tpn.dom))-1, y = tpn.dom*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Age of transposons' last known activity (df = tpn.dom)\nrep = ",argv[3],", scenario = ",argv[5])))
 suppressWarnings(matplot(x = seq_len(nrow(g.Fit))-1, y = g.Fit*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Fitness of genes hosting transposons (df = g.Fit from tpn.gene)\nrep = ",argv[3],", scenario = ",argv[5])))
