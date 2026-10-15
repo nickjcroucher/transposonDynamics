@@ -30,7 +30,7 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        working-directory: code     # the folder holding the model scripts and test_simulation.r
+        working-directory: src     # the folder holding the model scripts and test_simulation.r
     steps:
       - uses: actions/checkout@v6
         # with:

@@ -21,7 +21,7 @@ pdf(paste0("../data/ana--",argv[3],"-",argv[5],".pdf"))
 ##### Host parameters mapping #####
 cat(date(),": Genotype dominance",argv[3],"-",argv[5],"\n")
 gEnealogy = fAmily(rec.offspring)/ncol(rec.offspring)
-matplot(x = seq_len(nrow(gEnealogy))-1, y = gEnealogy*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of genotypes (df = gEnealogy)\nrep = ",argv[3],", scenario = ",argv[5]))
+suppressWarnings(matplot(x = seq_len(nrow(gEnealogy))-1, y = gEnealogy*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of genotypes (df = gEnealogy)\nrep = ",argv[3],", scenario = ",argv[5])))
 
 cat(date(),": Initial host dominance",argv[3],"-",argv[5],"\n")
 r.os0 = rec.offspring
@@ -72,9 +72,9 @@ for(i in seq_len(ncol(g.Rec))){
 };rm(i)
 g.Rec[,1] = log1p(g.Rec[,1]); g.Rec = g.Rec[,c(2,1)]
 
-matplot(x = seq_len(nrow(tpn.dom))-1, y = tpn.dom*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Age of transposons' last known activity (df = tpn.dom)\nrep = ",argv[3],", scenario = ",argv[5]))
-matplot(x = seq_len(nrow(g.Fit))-1, y = g.Fit*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Fitness of genes hosting transposons (df = g.Fit from tpn.gene)\nrep = ",argv[3],", scenario = ",argv[5]))
-matplot(x = seq_len(nrow(g.Rec))-1, y = g.Rec, col = cBp, xlab = "Generation", ylab = "Count", main = paste0("Count of transposons hitting gene recombination \nmechanism and those which are not [log1p] (df = g.Rec)\nrep = ",argv[3],", scenario = ",argv[5]))
+suppressWarnings(matplot(x = seq_len(nrow(tpn.dom))-1, y = tpn.dom*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Age of transposons' last known activity (df = tpn.dom)\nrep = ",argv[3],", scenario = ",argv[5])))
+suppressWarnings(matplot(x = seq_len(nrow(g.Fit))-1, y = g.Fit*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Fitness of genes hosting transposons (df = g.Fit from tpn.gene)\nrep = ",argv[3],", scenario = ",argv[5])))
+suppressWarnings(matplot(x = seq_len(nrow(g.Rec))-1, y = g.Rec, col = cBp, xlab = "Generation", ylab = "Count", main = paste0("Count of transposons hitting gene recombination \nmechanism and those which are not [log1p] (df = g.Rec)\nrep = ",argv[3],", scenario = ",argv[5])))
 
 ##### Export #####
 save(gEnealogy, rec.hostTraject, tpn.dom, tpn.gene, g.Fit, g.Rec, g.Fit.ref, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
