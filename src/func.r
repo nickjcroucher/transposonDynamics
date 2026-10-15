@@ -25,7 +25,7 @@ xIn = function(x, ref = pMs){
 
 ##### Reorganize GFF file #####
 gffClean = function(fLst = f.all){
-  gffs = grep("gff$", fLst, value = TRUE); hit = gffs[grepl(xIn("ref genome"), basename(gffs), fixed = TRUE)]
+  gffs = grep("gff$", fLst, value = TRUE); hit = gffs[grepl(strsplit(xIn("ref genome"), "[.]")[[1]][1], basename(gffs), fixed = TRUE)]
   if(length(hit) != 1){stop("expected one GFF named after ", xIn("ref genome"), "; found ", length(hit))}
   gFf = read.table(hit, sep = "\t", header = F, quote = "")
   colnames(gFf) = c("seqname","source","type","start","end","score","strand","phase","attributes")
