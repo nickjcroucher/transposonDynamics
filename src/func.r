@@ -10,8 +10,8 @@
 # library(stringr)
 
 ##### Constants #####
-rAw = c(dirname(argv[1]), basename(argv[1]))
-f.all = c(list.files(rAw[1], full.names = TRUE), list.files("../data", pattern = "gff$", full.names = TRUE))
+#rAw = c(dirname(argv[1]), basename(argv[1]))
+f.all = c(list.files("../raw", full.names = TRUE), list.files("../data", pattern = "gff$", full.names = TRUE))
 tPn.0 = read.csv(f.all[grepl("-tpn\\.csv$", f.all)], header = T, na.strings = "")
 host.0 = read.csv(f.all[grepl("-host\\.csv$", f.all)], header = T)
 pMs = read.csv(argv[1], header = T)
