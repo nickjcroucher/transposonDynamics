@@ -10,12 +10,12 @@
 source("p_path.r")
 suppressWarnings(library(readMDTable))
 
-f.ls = f.all[grep("CL0219", f.all)]
 f.ref = read.table(f.ls[grep("table", f.ls)], sep = "\t", header = TRUE)
 
 f.claude = as.data.frame(suppressMessages(read_md_table(f.ls[grep(".md$", f.ls)])))
 colnames(f.claude) = read.table(text = sub("[.]","@",colnames(f.claude)), sep = "@")[,2]
 
+system(paste("head -n 128", f.ls[grep("n.tsv", f.ls)], "| tail -n +7 > ../data/CL0219_gpt56.tsv"))
 f.gpt56 = read.table(f.ls[grep("gpt", f.ls)], sep = "\t", header = TRUE, comment.char = "", quote = "")
 system("rm ../data/CL0219_gpt56.tsv")
 

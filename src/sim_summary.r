@@ -77,5 +77,5 @@ suppressWarnings(matplot(x = seq_len(nrow(g.Fit))-1, y = g.Fit*100, col = cBp, y
 suppressWarnings(matplot(x = seq_len(nrow(g.Rec))-1, y = g.Rec, col = cBp, xlab = "Generation", ylab = "Count", main = paste0("Count of transposons hitting gene recombination \nmechanism and those which are not [log1p] (df = g.Rec)\nrep = ",argv[3],", scenario = ",argv[5])))
 
 ##### Export #####
-save(gEnealogy, rec.hostTraject, tpn.dom, tpn.gene, g.Fit, g.Rec, g.Fit.ref, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")
 invisible(dev.off())
+save(gEnealogy, rec.hostTraject, rec.tpnCount, tpn.dom, tpn.gene, g.Fit, g.Rec, g.Fit.ref, file = paste0("../data/ana--", argv[3], "_", argv[5], ".rda"), compress = "xz")

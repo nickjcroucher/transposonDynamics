@@ -69,10 +69,20 @@ cat(date(),": set scenario table\n")
 sCe = data.frame(transposon = a$uniqID, host = rep(row.names(a0), each = nrow(a)))
 write.csv(sCe, "../raw/scenario.csv", row.names = F, quote = F)
 
-##### Set rerun scenarios #####
-tPn = a$uniqID[which(a$jumpRate == 0 & a$jumpH1 == "fixed" & a$copyRate == 0 & a$copyH1 == "fixed" & a$copyDir == "both")]
-hOst = row.names(a0)[which(a0$recom == 0 & a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom %in% c(0, 1) & a0$hAReomH1 == "fixed" & a0$transposonEffect == F & a0$genotoxic == 0)]
+##### f: Set rerun scenarios #####
+sceSet = function(jp = 0, jH = "fixed", cp = 0, cH = "fixed", cD = "both", rc = 0, rH = "switch", cT = "haploid", hAR = 0, hH = "fixed", tE = FALSE, gT = 0, tpn = a, host = a0, sce = sCe){
+  tpn = tpn$uniqID[which(tpn$jumpRate %in% jp & tpn$jumpH1 %in% jH & tpn$copyRate %in% cp & tpn$copyH1 %in% cH & tpn$copyDir %in% cD)]
+  host = row.names(host)[which(a0$recom %in% rc & a0$recomH1 %in% rH & a0$cell %in% cT & a0$homologousAutoRecom %in% hAR & a0$hAReomH1 %in% hH & a0$transposonEffect %in% tE & a0$genotoxic %in% gT)]
+  x = which(sce$transposon %in% tpn & sce$host %in% host)
+  x = as.data.frame(cbind(rep(seq_len(10), each = length(x)), x))
+  return(x)
+}
+# tPn = a$uniqID[which(a$jumpRate == 0 & a$jumpH1 == "fixed" & a$copyRate == 0 & a$copyH1 == "fixed" & a$copyDir == "both")]
+# hOst = row.names(a0)[which(a0$recom == 0 & a0$recomH1 == "switch" & a0$cell == "haploid" & a0$homologousAutoRecom %in% c(0, 1) & a0$hAReomH1 == "fixed" & a0$transposonEffect == F & a0$genotoxic == 0)]
+# res = which(sCe$transposon %in% tPn & sCe$host %in% hOst) #data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
+# res = as.data.frame(cbind(rep(seq_len(10), each = length(res)), res))
 
-res = which(sCe$transposon %in% tPn & sCe$host %in% hOst) #data.frame(transposon = rep(tPn, each = length(hOst)), host = hOst)
-res = as.data.frame(cbind(rep(seq_len(10), each = length(res)), res))
-write.table(res, "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)
+##### Set scenarios #####
+res = rbind(sceSet(jp = unique(a$jumpRate), cp = unique(a$copyRate), rc = 1e-4, cT = unique(a0$cell), hAR = .5),
+            sceSet(jp = c(0, 1e-4), cp = c(0, 1e-4), rc = unique(a0$recom), cT = unique(a0$cell), hAR = c(.2, .5, .8)))
+write.table(unique(res), "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)

@@ -10,14 +10,14 @@
 # BSUB -G ph17g
 # BSUB -o ../work/pj02-%J-%I.o
 # BSUB -e ../work/pj02-%J-%I.e
-# BSUB -q week
+# BSUB -q normal
 # BSUB -M 16000
 # BSUB -R "select[mem>16000] rusage[mem=16000] span[hosts=1]"
 # BSUB -J "tdy[1-mAx]"
 
 PATH="/software/isg/private/wrappers/apptainer/1.4.0:$PATH"
 
-apptainer run --bind ${PWD}/../data:/data --pwd /src transposondynamics_latest.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
+apptainer run --rm --bind ${PWD}/../data:/data --pwd /src transposondynamics_latest.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
 
 exit
 ## any BSUB -J with the correct format, no matter at any line, later line will replace earlier lines # BSUB -J "tdy[1-360]"
