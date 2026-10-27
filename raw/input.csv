@@ -2,8 +2,8 @@ Type,Value,Note
 ref genome,GCA_000014365.2,https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon=1313
 gene fitness,../data/gFitness.csv,https://doi.org/10.1128/IAI.00713-20;https://doi.org/10.1038/nmeth.1377
 genes for recombination mechanism,SPD_2063;SPD_2064;SPD_2065;SPD_1739;SPD_1015;SPD_0042;SPD_1485,https://doi.org/10.3390/cells10081938;https://doi.org/10.1186/s13059-023-02914-z;https://pneumobrowse2.veeninglab.com/
-host organism constant generation number,500,
-host organism constant population size,500,
+host organism constant generation number,200,
+host organism constant population size,1000,
 host genome variation,3,any positive number
 host genetic variation,10,"1-26: 1 = homogeneous initial population; max 52 variations per gene; can specify variation for each gene using separator "";"""
 transposon population size per genome mean,5,high number indicates more transposons detected per genome

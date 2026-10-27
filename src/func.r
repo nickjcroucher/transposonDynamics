@@ -9,6 +9,9 @@
 
 # library(stringr)
 
+src.url = "https://raw.githubusercontent.com/ph-u/snippet_ph-u/refs/heads/master/"
+source(paste0(src.url, "eta.r"))
+
 ##### Constants #####
 #rAw = c(dirname(argv[1]), basename(argv[1]))
 f.all = c(list.files("../raw", full.names = TRUE), list.files("../data", pattern = "gff$", full.names = TRUE))
@@ -184,6 +187,31 @@ tPn.comLoc = function(oldNew, G = geneIn$genome[2], gDF = geneIn$gene){ # input 
   if(d[2] > d[1]){return("terminus")}else{return("origin")}
 } # if jump back onto the exact same location, allow survival
 
+##### Group selection #####
+gpSel = function(x, lim){
+  y = rep(0, length(x)); y0 = which(x==0)
+  while(length(y0)>0){
+    y[y0] = 1
+    y0 = c(y0-1,y0+1)
+    y0[y0<1] = length(y)
+    y0[y0>length(y)] = 1
+    y0 = ifelse(x[y0] > lim[y0], NA, y0)
+    y0 = ifelse(y[y0]==1,NA,y0)
+    y0 = y0[!is.na(y0)]
+  }
+  y0 = c(y[1] - y[length(y)], diff(y))
+  y1 = which(y0==1)
+  y2 = seq_len(length(y1))
+  while(length(y1)>0){
+    y[y1] = y2
+    y1 = y1 + 1
+    if(any(y1>length(y))){y1[y1>length(y)] = 1}
+    if(any(y0[y1]<0)){y2[y1 %in% which(y0<0)] = NA; y1[y1 %in% which(y0<0)] = NA}
+    y1 = y1[!is.na(y1)]; y2 = y2[!is.na(y2)]
+  }
+  return(y) #return(t(matrix(c(x, y), ncol = 2))) #
+}#; gpSel(c(0,.5,.6,.2,.7,.4,.3,.5,.2,.5,.3,0,.5,.6,.2,.7,.4,.3,.5,.2,.5), rep(.5, 21))
+
 ##### Gene hotspots additive probability #####
 gRc.prob = function(rGs, g.hotspot = geneIn$gene){
   g.hotspot$chromosome = as.numeric(substr(g.hotspot$locus_tag,1,1))
@@ -198,6 +226,7 @@ gRc.prob = function(rGs, g.hotspot = geneIn$gene){
   for(z in seq_len(length(r.1))){
     g.1$threshold = g.1$threshold + 2^(-abs(g.1$start - g.1$start[which(g.1$locus_tag==r.1[z])])/1000)
   };rm(z)
+  g.0$contiguous = gpSel(g.0$hotspot, g.0$threshold); g.1$contiguous = gpSel(g.1$hotspot, g.1$threshold); g.1$contiguous = g.1$contiguous + ifelse(g.1$contiguous>0, max(g.0$contiguous), 0)
   g.hotspot = rbind(g.0, g.1)
-  return(c(g.0$locus_tag[g.0$hotspot <= g.0$threshold], g.1$locus_tag[g.1$hotspot <= g.1$threshold]))
+  return(g.hotspot[which(g.hotspot$contiguous>0),c("locus_tag", "contiguous")])
 }

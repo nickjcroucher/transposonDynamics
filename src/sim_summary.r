@@ -8,32 +8,31 @@
 
 ##### extra env #####
 source("func_analysis.r")
-if(gEn <= gEn.max){
-  rec.gRecom = rec.gRecom[seq_len(gEn), , drop = FALSE]
-  rec.host = rec.host[seq_len(gEn), , drop = FALSE]
-  rec.offspring = rec.offspring[seq_len(gEn), , drop = FALSE]
-  rec.tpnCount = rec.tpnCount[seq_len(gEn), , drop = FALSE]
-  rec.transposon = rec.transposon[seq_len(gEn), , drop = FALSE]
-}
+rec.gRecom0 = rec.gRecom[seq_len(gEn), , drop = FALSE]
+rec.host0 = rec.host[seq_len(gEn), , drop = FALSE]
+rec.offspring0 = rec.offspring[seq_len(gEn), , drop = FALSE]
+rec.tpnCount0 = rec.tpnCount[seq_len(gEn), , drop = FALSE]
+rec.transposon0 = rec.transposon[seq_len(gEn), , drop = FALSE]
 # for(i in c("ape", "stringdist")){library(i, character.only=T)};rm(i)
 pdf(paste0("../data/ana--",argv[3],"-",argv[5],".pdf"))
 
 ##### Host parameters mapping #####
-cat(date(),": Genotype dominance",argv[3],"-",argv[5],"\n")
-gEnealogy = fAmily(rec.offspring)/ncol(rec.offspring)
-suppressWarnings(matplot(x = seq_len(nrow(gEnealogy))-1, y = gEnealogy*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of genotypes (df = gEnealogy)\nrep = ",argv[3],", scenario = ",argv[5])))
+# cat(date(),": Genotype dominance",argv[3],"-",argv[5],"\n")
+gEnealogy = fAmily(rec.offspring0, host.0$cell)/ncol(rec.offspring0)
+suppressWarnings(matplot(x = seq_len(nrow(gEnealogy))-1, y = gEnealogy*100, col = cBp, xlim = c(0, gEn.max), ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of genotypes (df = gEnealogy)\nrep = ",argv[3],", scenario = ",argv[5])))
 
-cat(date(),": Initial host dominance",argv[3],"-",argv[5],"\n")
-r.os0 = rec.offspring
+# cat(date(),": Initial host dominance",argv[3],"-",argv[5],"\n")
+r.os0 = rec.offspring0
 r.os0[1,] = paste0(seq_len(ncol(r.os0)),";",seq_len(ncol(r.os0)))
-rec.hostTraject = fAmily(r.os0)/ncol(r.os0)
-suppressWarnings(matplot(x = seq_len(nrow(rec.hostTraject))-1, y = rec.hostTraject*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of Initial host (df = rec.hostTraject)\nrep = ",argv[3],", scenario = ",argv[5])))
+rec.hostTraject = fAmily(r.os0, "haploid")/ncol(r.os0)
+suppressWarnings(matplot(x = seq_len(nrow(rec.hostTraject))-1, y = rec.hostTraject*100, col = cBp, xlim = c(0, gEn.max), ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of Initial host (df = rec.hostTraject)\nrep = ",argv[3],", scenario = ",argv[5])))
 
 ##### Transposon parameters mapping #####
-cat(date(),": Transposon counts",argv[3],"-",argv[5],"\n")
-plot(x = seq_len(gEn)-1, y = rowSums(rec.tpnCount) / hPop, xlab = "Generation", ylab = "Average transposon copy number", main = paste0("Average transposon copy number [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
+# cat(date(),": Transposon counts",argv[3],"-",argv[5],"\n")
+plot(x = seq_len(gEn)-1, y = log10(rowSums(rec.tpnCount0)+1), xlim = c(0, gEn.max), ylim = c(0, max(log10(rowSums(rec.tpnCount0)+1))), xlab = "Generation", ylab = "Total transposon copy number [log10(y+1)]", main = paste0("Total transposon copy number [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
+plot(x = seq_len(gEn)-1, y = rowSums(rec.tpnCount0) / hPop, xlim = c(0, gEn.max), ylim = c(0, max(rowSums(rec.tpnCount0)) / hPop), xlab = "Generation", ylab = "Average transposon copy number", main = paste0("Average transposon copy number [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
 
-cat(date(),": Transposon activity dominance",argv[3],"-",argv[5],"\n")
+# cat(date(),": Transposon activity dominance",argv[3],"-",argv[5],"\n")
 tpn.dom = matrix(0, nrow = gEn, ncol = gEn)
 
 gNam = unique(substr(geneIn$gene$locus_tag,2,nchar(geneIn$gene$locus_tag)))
@@ -47,8 +46,8 @@ g.Fit.ref$locus_tag = substr(g.Fit.ref$locus_tag,2,nchar(g.Fit.ref$locus_tag))
 g.Fit.ref$fitness = round(g.Fit.ref$fitness,1)
 g.Fit.ref$recombination = ifelse(is.na(g.Fit.ref$recombination),0,1)
 
-for(i in seq_len(nrow(rec.transposon))){
-  t.tmp = tPn.io(as.character(rec.transposon[i,]))
+for(i in seq_len(nrow(rec.transposon0))){
+  t.tmp = tPn.io(as.character(rec.transposon0[i,]))
 
   ## Generation dominance
   t.gen = table(t.tmp$generation)
@@ -72,9 +71,9 @@ for(i in seq_len(ncol(g.Rec))){
 };rm(i)
 g.Rec[,1] = log1p(g.Rec[,1]); g.Rec = g.Rec[,c(2,1), drop = FALSE]
 
-suppressWarnings(matplot(x = seq_len(nrow(tpn.dom))-1, y = tpn.dom*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Age of transposons' last known activity (df = tpn.dom)\nrep = ",argv[3],", scenario = ",argv[5])))
-suppressWarnings(matplot(x = seq_len(nrow(g.Fit))-1, y = g.Fit*100, col = cBp, ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Fitness of genes hosting transposons (df = g.Fit from tpn.gene)\nrep = ",argv[3],", scenario = ",argv[5])))
-suppressWarnings(matplot(x = seq_len(nrow(g.Rec))-1, y = g.Rec, col = cBp, xlab = "Generation", ylab = "Count", main = paste0("Count of transposons hitting gene recombination \nmechanism and those which are not [log1p] (df = g.Rec)\nrep = ",argv[3],", scenario = ",argv[5])))
+suppressWarnings(matplot(x = seq_len(nrow(tpn.dom))-1, y = tpn.dom*100, col = cBp, xlim = c(0, gEn.max), ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Age of transposons' last known activity (df = tpn.dom)\nrep = ",argv[3],", scenario = ",argv[5])))
+suppressWarnings(matplot(x = seq_len(nrow(g.Fit))-1, y = g.Fit*100, col = cBp, xlim = c(0, gEn.max), ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Fitness of genes hosting transposons (df = g.Fit from tpn.gene)\nrep = ",argv[3],", scenario = ",argv[5])))
+suppressWarnings(matplot(x = seq_len(nrow(g.Rec))-1, y = g.Rec, col = cBp, xlim = c(0, gEn.max), xlab = "Generation", ylab = "Count", main = paste0("Count of transposons hitting gene recombination \nmechanism and those which are not [log1p] (df = g.Rec)\nrep = ",argv[3],", scenario = ",argv[5])))
 
 ##### Export #####
 invisible(dev.off())

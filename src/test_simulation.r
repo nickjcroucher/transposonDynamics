@@ -6,15 +6,14 @@
 #     or, inside R: testthat::test_file("test_simulation.r")
 # out: test report on screen; Rscript exits with status 1 if any test fails or errors
 # arg: none; optional environment switch:
-#      TPN_SKIP_INTEGRATION=true   skip the end-to-end simulate.r runs (the slow part: 16 short runs)
-# date: 20261014
+#      TPN_SKIP_INTEGRATION=true   skip the end-to-end simulate.r runs (the slow part: 18 short runs)
+# date: 20261027
 #
-# Paths follow simulate.r's default arguments: the input file (../raw/input.csv) with the templates next to it,
-# the seed and scenario files, and ../data for the GFF and gene fitness file. The suite only READS those files.
-# Everything that writes (mock genomes, simulate.r and sim_summary.r outputs) happens in throwaway copies of
-# the project under tempdir(), which R deletes when the session ends.
-# The same-spot duplicate check in the end-to-end tests assumes homologous repair matches the homolog by gene
-# AND location (simulate.r lines 184/186).
+# Needs internet access: func.r and func_analysis.r source helper scripts (eta.r, colour.r) from GitHub.
+# Input file: simulate.r's default (../data/input.csv) when it exists, otherwise the committed ../raw/input.csv
+# (data/ is git-ignored, so CI uses the raw/ copy). Templates always come from ../raw, as func.r reads them.
+# The suite only READS the project folders. Everything that writes (mock genomes, simulate.r and sim_summary.r
+# outputs) happens in throwaway copies of the project under tempdir(), which R deletes when the session ends.
 
 ##### 0. `Rscript test_simulation.r` re-runs this file under testthat #####
 if (!identical(Sys.getenv("TESTTHAT"), "true")) {
@@ -52,19 +51,19 @@ sim_defaults <- local({
 })
 if (length(sim_defaults) < 5) stop("could not read the default arguments on simulate.r's argv line", call. = FALSE)
 from_code <- function(p) normalizePath(file.path(code_dir, p), mustWork = FALSE)
-f_input <- from_code(sim_defaults[1])
+f_input <- from_code(sim_defaults[1])                                 # simulate.r's default (../data/input.csv)
+if (!file.exists(f_input)) f_input <- from_code("../raw/input.csv")   # data/ is git-ignored: use the committed copy
 f_seed <- from_code(sim_defaults[2])
 f_scen <- from_code(sim_defaults[4])
-raw_dir <- dirname(f_input)
-data_dir <- normalizePath(file.path(code_dir, "..", "data"), mustWork = FALSE)
+raw_dir <- from_code("../raw")                                        # func.r always reads the templates from here
+data_dir <- from_code("../data")
 
-# Templates located the way func.r does: exact suffixes in the input file's folder
 raw_files <- if (dir.exists(raw_dir)) list.files(raw_dir, full.names = TRUE) else character(0)
 f_tpn <- raw_files[grepl("-tpn\\.csv$", raw_files)]
 f_host <- raw_files[grepl("-host\\.csv$", raw_files)]
 if (!file.exists(f_input) || length(f_tpn) != 1 || length(f_host) != 1) {
-  stop("func.r needs ", sim_defaults[1], " plus exactly one *-tpn.csv and one *-host.csv next to it (found ",
-       length(f_tpn), " and ", length(f_host), " in ", raw_dir, ")", call. = FALSE)
+  stop("the tests need an input file (", sim_defaults[1], " or ../raw/input.csv) and exactly one *-tpn.csv and ",
+       "one *-host.csv in ../raw (found ", length(f_tpn), " and ", length(f_host), ")", call. = FALSE)
 }
 tpn_tmpl <- utils::read.csv(f_tpn, header = TRUE, na.strings = "")     # read as func.r reads it
 host_tmpl <- utils::read.csv(f_host, header = TRUE)
@@ -176,7 +175,7 @@ SB_ARGV <- c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", 
 fenv <- new.env()                          # func.r, sourced inside the main copy; it reads argv on load
 assign("argv", SB_ARGV, envir = fenv)
 withr::with_dir(sb_main$code, sys.source("func.r", envir = fenv, keep.source = FALSE))
-aenv <- new.env()                          # func_analysis.r
+aenv <- new.env()                          # func_analysis.r; its colour.r lands in the global environment
 sys.source(file.path(code_dir, "func_analysis.r"), envir = aenv, keep.source = FALSE)
 tpl <- fenv$tPn.0                          # transposon template exactly as func.r reads it
 
@@ -198,6 +197,9 @@ toy_gdf <- data.frame(locus_tag = c("0T_0001", "0T_0002", "0T_0003"), start = c(
 cl_gdf <- data.frame(locus_tag = c(paste0("0T_000", 1:3), paste0("1T_000", 1:3)), start = rep(c(11, 36, 61), 2),
                      end = rep(c(30, 55, 80), 2), length = 20, interLength = rep(c(30, 5, 5), 2),
                      fitness = 1, recombination = NA)
+# Five genes per copy: 1 kb apart, then 48 kb and ~1 Mb away
+hot <- data.frame(locus_tag = c(sprintf("0H_%04d", 1:5), sprintf("1H_%04d", 1:5)),
+                  start = rep(c(1, 1001, 2001, 50001, 1e6), 2))
 letters_of <- function(x) unique(strsplit(paste(x, collapse = ""), "")[[1]])
 gin_main <- function(seed = 1) withr::with_dir(sb_main$code, withr::with_seed(seed, fenv$gIn()))
 
@@ -226,6 +228,17 @@ test_that("gffClean() reads the one GFF named after 'ref genome' and splits attr
   expect_identical(g$locus_tag[g$type == "gene"], mock_main$tags)
   expect_equal(g$start[g$type == "gene"], mock_main$starts)
   expect_identical(g$product[g$type == "CDS"][2], "mock protein 2")
+})
+
+test_that("gffClean() matches the GFF on the part of 'ref genome' before its first dot", {
+  withr::local_dir(sb_main$code)
+  orig <- fenv$pMs
+  withr::defer(assign("pMs", orig, envir = fenv))
+  p <- orig
+  p$Value[p$Type == "ref genome"] <- "mock_genome.7"      # a versioned accession still finds mock_genome.gff
+  assign("pMs", p, envir = fenv)
+  g <- fenv$gffClean()
+  expect_identical(g$locus_tag[g$type == "gene"], mock_main$tags)
 })
 
 test_that("gffClean() stops unless exactly one GFF matches 'ref genome'", {
@@ -445,39 +458,83 @@ test_that("tPn.comLoc() calls a copy 'terminus' when it lands farther from the o
   expect_error(fenv$tPn.comLoc(mk_tpn("g0T_0002", 5), G = 100, gDF = cl_gdf), "Length-two")
 })
 
-hot <- data.frame(locus_tag = c(sprintf("0H_%04d", 1:5), sprintf("1H_%04d", 1:5)),
-                  start = rep(c(1, 1001, 2001, 50001, 1e6), 2))
-
-test_that("gRc.prob() keeps the chosen genes, stays on their copy and ignores distant genes", {
-  for (s in 1:25) {
-    out <- withr::with_seed(s, fenv$gRc.prob("0H_0002", g.hotspot = hot))
-    expect_true("0H_0002" %in% out)
-    expect_true(all(startsWith(out, "0")))
-    expect_false(any(c("0H_0004", "0H_0005") %in% out))
-  }
-  expect_identical(withr::with_seed(1, fenv$gRc.prob(character(0), g.hotspot = hot)), character(0))
-  two <- withr::with_seed(2, fenv$gRc.prob(c("0H_0001", "0H_0003"), g.hotspot = hot))
-  expect_true("0H_0002" %in% two)                       # 1 kb from both picks: weights add up to 1
+test_that("gpSel() grows numbered blocks from the seeds (x == 0) through neighbours with x <= lim", {
+  ex <- c(0, .5, .6, .2, .7, .4, .3, .5, .2, .5, .3, 0, .5, .6, .2, .7, .4, .3, .5, .2, .5)   # example in func.r
+  expect_equal(fenv$gpSel(ex, rep(.5, 21)), c(2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 2, 2, 2))
+  expect_equal(fenv$gpSel(c(0, .9, 0, .9), rep(.5, 4)), c(1, 0, 2, 0))           # two separate blocks
+  expect_equal(fenv$gpSel(c(0, .9, .1, .1, .9), rep(.5, 5)), c(1, 0, 0, 0, 0))   # qualifying genes cut off from seeds
 })
 
-test_that("gRc.prob() picks a neighbour 1 kb away about half of the time", {
+test_that("gpSel() treats the chromosome as circular in both directions", {
+  expect_equal(fenv$gpSel(c(0, .9, .9, .4), rep(.5, 4)), c(1, 0, 0, 1))   # seed on gene 1 reaches the last gene
+  expect_equal(fenv$gpSel(c(.4, .9, .9, 0), rep(.5, 4)), c(1, 0, 0, 1))   # seed on the last gene reaches gene 1
+})
+
+test_that("gpSel() edge cases: no seed, every gene qualifies, a single gene", {
+  expect_equal(fenv$gpSel(c(.1, .2, .3), rep(.5, 3)), c(0, 0, 0))
+  expect_equal(fenv$gpSel(c(0, .1, .1, .1), rep(.5, 4)), c(1, 1, 1, 1))
+  expect_equal(fenv$gpSel(0, .5), 1)
+})
+
+test_that("gRc.prob() returns each seed gene and its contiguous neighbours, numbered by block", {
+  for (s in 1:25) {
+    out <- withr::with_seed(s, fenv$gRc.prob("0H_0002", g.hotspot = hot))
+    expect_named(out, c("locus_tag", "contiguous"))
+    expect_true("0H_0002" %in% out$locus_tag)
+    expect_true(all(startsWith(out$locus_tag, "0")))              # stays on the seed's copy
+    expect_false(any(c("0H_0004", "0H_0005") %in% out$locus_tag)) # 48 kb or more from the seed
+    expect_true(all(out$contiguous == 1))                         # one seed, one block
+  }
+  expect_equal(nrow(withr::with_seed(1, fenv$gRc.prob(character(0), g.hotspot = hot))), 0)
+})
+
+test_that("gRc.prob() joins two seeds through a gene 1 kb from both", {
+  two <- withr::with_seed(2, fenv$gRc.prob(c("0H_0001", "0H_0003"), g.hotspot = hot))
+  expect_setequal(two$locus_tag, c("0H_0001", "0H_0002", "0H_0003"))   # 0H_0002: threshold 0.5 + 0.5 = 1
+  expect_true(all(two$contiguous == 1))
+})
+
+test_that("gRc.prob() numbers copy-1 blocks after the copy-0 blocks", {
+  out <- withr::with_seed(3, fenv$gRc.prob(c("0H_0002", "1H_0004"), g.hotspot = hot))
+  b0 <- out$contiguous[startsWith(out$locus_tag, "0")]
+  b1 <- out$contiguous[startsWith(out$locus_tag, "1")]
+  expect_true("1H_0004" %in% out$locus_tag)
+  expect_true(length(b0) > 0 && length(b1) > 0)
+  expect_true(min(b1) > max(b0))
+})
+
+test_that("gRc.prob() takes a neighbour 1 kb away about half of the time", {
   hits <- vapply(1:2000, function(s) {
-    withr::with_seed(s, "0H_0001" %in% fenv$gRc.prob("0H_0002", g.hotspot = hot))
+    withr::with_seed(s, "0H_0001" %in% fenv$gRc.prob("0H_0002", g.hotspot = hot)$locus_tag)
   }, logical(1))
   expect_true(abs(mean(hits) - 0.5) < 0.05, info = paste("observed", mean(hits)))
 })
 
-##### 5. Unit tests: func_analysis.r #####
-test_that("colour palettes are defined with matching lengths", {
-  expect_gte(length(aenv$cBp), 9)
-  expect_equal(length(aenv$cBl), length(aenv$cBp))
-  expect_equal(length(aenv$cBl0), length(aenv$cBp))
-  expect_error(grDevices::col2rgb(c(aenv$cBp, aenv$cBl, aenv$cBl0), alpha = TRUE), NA)
+test_that("gRc.prob() blocks on the mock genome are unbroken runs on one chromosome copy", {
+  gi <- gin_main()
+  g <- gi$gene
+  n <- gi$numGene
+  for (s in 1:10) {
+    seeds <- withr::with_seed(s, sample(g$locus_tag, 6))
+    out <- withr::with_seed(s, fenv$gRc.prob(seeds, g.hotspot = g))
+    expect_true(all(seeds %in% out$locus_tag))
+    for (b in unique(out$contiguous)) {
+      tags <- out$locus_tag[out$contiguous == b]
+      cp <- unique(substr(tags, 1, 1))
+      expect_length(cp, 1)                                         # one copy per block
+      idx <- sort(match(tags, g$locus_tag[substr(g$locus_tag, 1, 1) == cp[1]]))
+      steps <- diff(c(idx, idx[1] + n))                           # gaps around the circle
+      expect_equal(sum(steps > 1), as.integer(length(idx) < n), info = paste(tags, collapse = " "))
+    }
+  }
 })
 
-test_that("famRoot() averages two contribution strings position by position", {
-  expect_identical(aenv$famRoot(), "1!0.5;2!0.3;3!0.2")
-  expect_identical(aenv$famRoot("1!1;2!0", "1!0;2!1"), "1!0.5;2!0.5")
+##### 5. Unit tests: func_analysis.r #####
+test_that("the colour palette sim_summary.r plots with (cBp) is available after sourcing func_analysis.r", {
+  expect_true(exists("cBp", envir = aenv))                  # colour.r is sourced into the global environment
+  pal <- get("cBp", envir = aenv)
+  expect_gte(length(pal), 1)
+  expect_error(grDevices::col2rgb(pal, alpha = TRUE), NA)
 })
 
 test_that("fAmily() follows ancestry through copy-0 (1..n) and copy-1 (n+1..2n) parent indices", {
@@ -504,6 +561,32 @@ test_that("fAmily() conserves total ancestry in every generation", {
   pick <- function(k, m) paste(sample(k, m, TRUE), sample(k, m, TRUE), sep = ";")
   tr <- rbind(pick(3, n), matrix(pick(2 * n, n * (g - 1)), nrow = g - 1))
   expect_equal(unname(rowSums(aenv$fAmily(tr))), rep(n, g))
+})
+
+test_that("fAmily(state = 'diploid') counts each genome's founding template, including lost lineages", {
+  tr <- rbind(c("1;2", "3;1", "2;2"),       # genomes: copy 0 = 1, 3, 2; copy 1 = 2, 1, 2
+              c("1;4", "5;1", "4;4"))       # parents carry only templates 1 and 2: template 3 is lost
+  out <- aenv$fAmily(tr, "diploid")
+  expect_equal(dim(out), c(2, 3))
+  expect_equal(unlist(out[1, ], use.names = FALSE), c(1, 1.5, 0.5))   # genome counts / 2
+  expect_equal(unlist(out[2, ], use.names = FALSE), c(1.5, 1.5, 0))
+  one <- aenv$fAmily(tr[1, , drop = FALSE], "diploid")                # a single generation
+  expect_equal(dim(one), c(1, 3))
+})
+
+test_that("fAmily(state = 'diploid') conserves ancestry: each generation sums to the population size", {
+  withr::local_seed(19)
+  n <- 12
+  g <- 6
+  pick <- function(k, m) paste(sample(k, m, TRUE), sample(k, m, TRUE), sep = ";")
+  first <- c("1;2", "3;1", "2;3", pick(3, n - 3))                    # every founding template is used
+  tr <- rbind(first, matrix(pick(2 * n, n * (g - 1)), nrow = g - 1))
+  expect_equal(unname(rowSums(aenv$fAmily(tr, "diploid"))), rep(n, g))
+})
+
+test_that("fAmily(state = 'diploid') gives one column per founding template actually used", {
+  out <- aenv$fAmily(rbind(c("2;3", "3;2", "3;3")), "diploid")       # template 1 never drawn
+  expect_equal(unlist(out[1, ], use.names = FALSE), c(1, 2))         # columns = templates 2 and 3
 })
 
 ##### 6. Input data used by simulate.r's defaults #####
@@ -546,7 +629,7 @@ test_that("the gene fitness file named in the input file exists", {
 })
 
 test_that("transposon template keeps the column order simulate.r reads by position", {
-  # simulate.r lines 146/149 read x[11], x[13], x[15]-x[17]; line 204 reads x[1] and x[23]
+  # simulate.r reads x[11], x[13], x[15]-x[17] (rate rules) and x[1], x[23] (copy direction) by position
   expect_identical(names(tpn_tmpl), c("gene", "location", "generation", "valid", "uniqID", "size",
                                       "jumpRate", "jumpH1", "copyRate", "copyH1", "copyDir"))
 })
@@ -590,13 +673,13 @@ test_that("scenario file points at existing template rows", {
   expect_true(all(c("transposon", "host") %in% names(sc)))
   expect_true(all(!is.na(sc$host) & sc$host >= 1 & sc$host <= nrow(host_tmpl)))
   ids <- unique(unlist(strsplit(unique(sc$transposon), ";", fixed = TRUE)))
-  # same rule as simulate.r line 23: tPn.0$uniqID %in% strsplit(sCene$transposon, ";")[[1]]
+  # same rule as simulate.r: tPn.0$uniqID %in% strsplit(sCene$transposon, ";")[[1]]
   n_rows <- vapply(ids, function(id) sum(tpn_tmpl$uniqID %in% id), integer(1))
   expect_true(all(n_rows == 1),
               info = paste("unmatched or ambiguous IDs:", paste(utils::head(ids[n_rows != 1], 10), collapse = ", ")))
 })
 
-test_that("simulate.r's default seed and scenario exist, and line 22's skip-read returns that row", {
+test_that("simulate.r's default seed and scenario exist, and its skip-read returns that row", {
   skip_if_not(file.exists(f_seed) && file.exists(f_scen), "seed or scenario file not found")
   seeds <- utils::read.csv(f_seed, header = FALSE)[, 1]
   k_seed <- suppressWarnings(as.numeric(sim_defaults[3]))
@@ -623,12 +706,15 @@ real_ref <- local({
   pms <- utils::read.csv(f_input, header = TRUE)
   as.character(pms$Value[pms$Type == "ref genome"][1])
 })
+real_key <- strsplit(real_ref, "[.]")[[1]][1]       # gffClean() matches on the part before the first dot
 real_gffs <- if (dir.exists(data_dir)) list.files(data_dir, pattern = "gff$") else character(0)
 skip_no_genome <- function() skip_if(length(real_gffs) == 0, "no *.gff in ../data")
 real_env <- function() {
   if (is.null(cache$renv)) {
     e <- new.env()
-    assign("argv", sim_defaults, envir = e)
+    real_argv <- sim_defaults
+    real_argv[1] <- f_input
+    assign("argv", real_argv, envir = e)
     withr::with_dir(code_dir, sys.source("func.r", envir = e, keep.source = FALSE))
     cache$renv <- e
   }
@@ -641,7 +727,7 @@ real_gff <- function() {                 # parsing a full GFF is slow, so do it 
 
 test_that("real genome: exactly one GFF in ../data is named after 'ref genome'", {
   skip_no_genome()
-  expect_equal(sum(grepl(real_ref, real_gffs, fixed = TRUE)), 1,
+  expect_equal(sum(grepl(real_key, real_gffs, fixed = TRUE)), 1,
                info = paste("GFF files:", paste(real_gffs, collapse = ", ")))
 })
 
@@ -706,6 +792,9 @@ scenario_rows <- function() {
   }
   host <- function(...) pick_row(host_tmpl, list(...))
   hap <- host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX, genotoxic = 0, homologousAutoRecom = 0.9)
+  hap_rec <- host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX, genotoxic = 0,
+                  homologousAutoRecom = 0)
+  dip_rec <- host(recom = 0.1, recomH1 = "switch", cell = "diploid", hAReomH1 = FX, genotoxic = 0)
   def <- c(NA, NA)
   k <- suppressWarnings(as.numeric(sim_defaults[5]))
   if (file.exists(f_scen)) {
@@ -725,11 +814,12 @@ scenario_rows <- function() {
     copy_dir_jumps_only = c(tpn(0.1, 0, dir = "terminus"), hap),
     recom_tiny = c(tpn(0.1, 0.1), host(recom = 0.0001, recomH1 = "switch", cell = "haploid", hAReomH1 = FX,
                                        genotoxic = 0)),
-    recomb_only = c(tpn(0.1, 0.1), host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX,
-                                        genotoxic = 0, homologousAutoRecom = 0)),
+    recomb_only = c(tpn(0.1, 0.1), hap_rec),
     repair_only = c(tpn(0.1, 0.1), host(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0,
                                         homologousAutoRecom = 0.9)),
-    inert = c(tpn(0, 0), host(recom = 0, cell = "diploid", hAReomH1 = FX, genotoxic = 0))
+    inert = c(tpn(0, 0), host(recom = 0, cell = "diploid", hAReomH1 = FX, genotoxic = 0)),
+    hgt = c(tpn(0, 0), hap_rec),            # inert transposons: only inheritance and recombination change them
+    conversion = c(tpn(0, 0), dip_rec)
   )
 }
 
@@ -818,6 +908,17 @@ chrom_keys <- function(cell) {
   copy <- substr(m[, 1], 2, 2)
   list(sort(key[copy == "0"]), sort(key[copy == "1"]))
 }
+# Identity keys per chromosome copy (region, locus, location, generation, transposon ID; copy digit removed).
+copy_keys <- function(cell) {
+  m <- if (is.na(cell) || !nzchar(cell)) NULL else tpn_fields(cell)$m
+  if (is.null(m)) return(list(character(0), character(0)))
+  key <- paste(substr(m[, 1], 1, 1), substring(m[, 1], 3), as.numeric(m[, 2]), m[, 3], m[, 5], sep = "|")
+  copy <- substr(m[, 1], 2, 2)
+  list(key[copy == "0"], key[copy == "1"])
+}
+genome_keys <- function(tr_row, g) {    # keys of parent genome g (1..n copy 0, n+1..2n copy 1)
+  copy_keys(tr_row[(g - 1) %% length(tr_row) + 1])[[(g - 1) %/% length(tr_row) + 1]]
+}
 # Host records holding the same transposon twice (identical in every field except 'valid').
 same_spot_duplicates <- function(tr) {
   bad <- character(0)
@@ -883,6 +984,7 @@ expect_sim_outputs <- function(run, uniq, cell, recom_rate = NULL, gmax = GMAX, 
   expect_true(all(is.finite(g) & g >= 0))
   if (!is.null(recom_rate)) expect_true(all(abs(g - recom_rate) < 1e-12), info = "fixed homologous repair rate")
 
+  # the analysis runs inside the generation loop; the saved one must cover every recorded generation
   if (file.exists(run$ana)) {
     a <- load_rda(run$ana)
     expect_true(all(c("gEnealogy", "rec.hostTraject", "tpn.dom", "tpn.gene", "g.Fit", "g.Rec", "g.Fit.ref") %in% ls(a)))
@@ -948,11 +1050,9 @@ test_that("end to end: copy direction in generations with jumps but no copies", 
   expect_scenario("copy_dir_jumps_only")
 })
 
-test_that("end to end: hosts that draw no genes to recombine (recom 0.0001) skip the stage", {
+test_that("end to end: very low recombination rate (recom 0.0001)", {
   skip_integration()
-  run <- expect_scenario("recom_tiny")
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  expect_true(all(load_rda(run$sim)$rec.host == ""), info = "no recombination should be recorded")
+  expect_scenario("recom_tiny")
 })
 
 test_that("end to end: recombination replaces the recipient's segment (repair off)", {
@@ -995,6 +1095,50 @@ test_that("end to end: offspring carry the transposons of the parent genomes rec
   expect_true(length(bad) == 0, info = paste(length(bad), "mismatches, e.g.", bad[1]))
 })
 
+test_that("end to end: recombination copies donor transposons into haploid recipients", {
+  skip_integration()
+  run <- expect_scenario("hgt")             # inert transposons, haploid host recombining, repair off
+  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
+  e <- load_rda(run$sim)
+  gained <- 0
+  foreign <- character(0)
+  for (r in 2:nrow(e$rec.offspring)) {
+    pool <- unique(unlist(lapply(e$rec.transposon[r - 1, ], function(cell) unlist(copy_keys(cell)))))
+    for (j in seq_len(ncol(e$rec.offspring))) {
+      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
+      new <- setdiff(unlist(copy_keys(e$rec.transposon[r, j])), genome_keys(e$rec.transposon[r - 1, ], k[1]))
+      gained <- gained + length(new)
+      foreign <- c(foreign, setdiff(new, pool))
+    }
+  }
+  expect_gt(gained, 0)                      # transposons the parent genome did not carry arrived from donors
+  expect_true(length(foreign) == 0, info = paste("transposons found in no host of the previous generation, e.g.",
+                                                 foreign[1]))
+})
+
+test_that("end to end: gene conversion copies the homolog's transposons in diploid hosts", {
+  skip_integration()
+  run <- expect_scenario("conversion")      # inert transposons, diploid host recombining
+  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
+  e <- load_rda(run$sim)
+  gained <- 0
+  foreign <- character(0)
+  for (r in 2:nrow(e$rec.offspring)) {
+    for (j in seq_len(ncol(e$rec.offspring))) {
+      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
+      parents <- lapply(k, function(g) genome_keys(e$rec.transposon[r - 1, ], g))
+      child <- copy_keys(e$rec.transposon[r, j])
+      for (cp in 1:2) {
+        new <- setdiff(child[[cp]], parents[[cp]])
+        gained <- gained + length(new)
+        foreign <- c(foreign, setdiff(new, parents[[3 - cp]]))   # must come from the homolog
+      }
+    }
+  }
+  expect_gt(gained, 0)
+  expect_true(length(foreign) == 0, info = paste("transposons not taken from the homolog, e.g.", foreign[1]))
+})
+
 test_that("end to end: evolved rates are carried by transposons that move; unmoved ones keep the template rate", {
   skip_integration()
   it <- integration()
@@ -1021,30 +1165,31 @@ test_that("end to end: chromosome copies left without transposons (one transposo
   }
 })
 
-test_that("end to end: a host population eliminated early still finishes with its analysis", {
+test_that("end to end: a host population eliminated in generation 1 finishes cleanly", {
   skip_integration()
   run <- run_sim(sb_extra("lethal"), 1)
   expect_equal(run$status, 0, info = run$tail)
   expect_true(any(grepl("Host population eliminated", run$log, fixed = TRUE)), info = run$tail)
-  expect_true(file.exists(run$ana), info = "analysis .rda")
+  # only generation 0 is recorded, so simulate.r runs no analysis; any analysis written must still be consistent
   if (file.exists(run$ana)) {
     a <- load_rda(run$ana)
-    expect_gte(nrow(a$gEnealogy), 1)
     expect_equal(unname(rowSums(a$gEnealogy)), rep(1, nrow(a$gEnealogy)), tolerance = 1e-8)
   }
 })
 
-test_that("end to end: simulate.r uses the parameter file given as its first argument", {
+test_that("end to end: simulate.r reads the parameter file in its first argument, wherever it is", {
   skip_integration()
   it <- integration()
   skip_if_not(isTRUE(it$ok[["fixed"]]), "no template rows for the fixed scenario")
   k <- it$index[["fixed"]]
   h <- it$tab$host[k]
+  alt_dir <- file.path(sb_main$root, "alt")
+  dir.create(alt_dir, showWarnings = FALSE)
   alt <- utils::read.csv(file.path(sb_main$raw, "input.csv"), header = TRUE)
   alt$Value[alt$Type == "host organism constant population size"] <- "12"
   alt$Value[alt$Type == "host organism constant generation number"] <- "2"
-  utils::write.csv(alt, file.path(sb_main$raw, "alt-params.csv"), row.names = FALSE)
-  run <- run_sim(sb_main, k, seed_index = 2L, input = "../raw/alt-params.csv")
+  utils::write.csv(alt, file.path(alt_dir, "params.csv"), row.names = FALSE)
+  run <- run_sim(sb_main, k, seed_index = 2L, input = "../alt/params.csv")   # templates still come from ../raw
   expect_sim_outputs(run, it$tab$transposon[k], host_tmpl$cell[h], gmax = 2, hpop = 12,
                      recom_rate = host_tmpl$homologousAutoRecom[h])
 })

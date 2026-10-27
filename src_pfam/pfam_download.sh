@@ -8,11 +8,12 @@
 # date: 20261019
 
 i0="CL0219"
-mkdir -p ${i0}
+mkdir -p ../data/${i0}
 while read -r l;do
   i=`echo -e "${l}" | cut -f 1 -d ","`
-  python3 script-interPro.py ${i} > ${i0}/${i}-tax.json &
-done < CL0219_category.csv
+  curl "https://www.ebi.ac.uk/interpro/api/entry/pfam/${i}/?taxa" > ../data/${i0}/${i}-tax.json &
+#  python3 script-interPro.py ${i} > ../data/${i0}/${i}-tax.json & # data too heavy
+done < ../data/CL0219_category.csv
 
 exit
 

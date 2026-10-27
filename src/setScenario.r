@@ -16,9 +16,9 @@ pAr = list(
   valid = T,
   uniqID = "",
   size = 1000,
-  jumpRate = c(10^-(1:4),0),
+  jumpRate = c(10^-(1:3),0),
   jumpH1 = c("fixed", "charlesworth", "evolving"),
-  copyRate = c(10^-(1:4),0),
+  copyRate = c(10^-(1:3),0),
   copyH1 = c("fixed", "charlesworth", "evolving"),
   copyDir = c("both", "terminus", "origin")
 )
@@ -45,7 +45,7 @@ write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)
 
 ##### Set cell simulation scenarios #####
 cat(date(),": set host cell table\n")
-rEcom = c(10^-(1:4),0)
+rEcom = c(10^-(1:3),0)
 rEcH1 = c("switch", "homeostatic")
 pAr = list(
   cell = c("haploid", "diploid"),
@@ -83,6 +83,5 @@ sceSet = function(jp = 0, jH = "fixed", cp = 0, cH = "fixed", cD = "both", rc = 
 # res = as.data.frame(cbind(rep(seq_len(10), each = length(res)), res))
 
 ##### Set scenarios #####
-res = rbind(sceSet(jp = unique(a$jumpRate), cp = unique(a$copyRate), rc = 1e-4, cT = unique(a0$cell), hAR = .5),
-            sceSet(jp = c(0, 1e-4), cp = c(0, 1e-4), rc = unique(a0$recom), cT = unique(a0$cell), hAR = c(.2, .5, .8)))
+res = sceSet(jp = unique(a$jumpRate), cp = unique(a$copyRate), rc = unique(a0$recom), cT = unique(a0$cell), hAR = c(.2, .5, .8))
 write.table(unique(res), "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)

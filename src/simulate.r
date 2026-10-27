@@ -8,7 +8,7 @@
 # date: 20260623, 20261006
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "418501")} # 418501, 559577
+if(length(argv) < 5){argv=c("../data/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "211681")} # 208225 vs 211681
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -58,9 +58,9 @@ sim.df$transposon = apply(sim.df, 1, FUN = function(x){paste0(x[3], ";", tPn.fla
 rm(ini.tPn)
 
 ##### Wright-Fisher / Neutral model run #####
-gEn = 0
+gEn = 0; t.ori = Sys.time()
 repeat{
-  cat(date(),": run simulation",argv[3],"-",argv[5], "; generation =",gEn, "/",gEn.max, "(",round(gEn/gEn.max*100,2),"% ); ")
+  eTa(t.ori, gEn + 1, gEn.max + 1, paste("run simulation",argv[3],"-",argv[5]))
   # Population dynamics snapshot
   rec.host[gEn + 1,] = sim.df$host
   rec.transposon[gEn + 1,] = sim.df$transposon
@@ -68,11 +68,13 @@ repeat{
   rec.gRecom[gEn + 1,] = sim.df$hARecomRate
   rec.tpnCount[gEn + 1,] = lengths(strsplit(sim.df$transposon, ";"))
   save(hOst, rec.host, rec.transposon, rec.offspring, rec.gRecom, rec.tpnCount, sim.df, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+  cat(" Analyzing;")
+  gEn = gEn + 1; if(gEn > 1){source("sim_summary.r")}
 
-  gEn = gEn + 1; if(gEn > gEn.max){ break } # simulation done
+  if(gEn > gEn.max){ break } # simulation done
 
   ##### Population reproduction stage #####
-  cat("Reproduction; ")
+  cat(" Reproduction;")
   # 1 Reconstruct transposon-focused df
   s0.tpn = strsplit(gsub("^;$","", sim.df$transposon), ";")
   s0.tpn = data.frame(tpn = unlist(s0.tpn), host = rep(seq_len(length(s0.tpn)), lengths(s0.tpn)), fitness = 1)
@@ -126,7 +128,7 @@ repeat{
   sim.df$transposon = apply(tpns, 1, FUN = function(x){return(paste(x[nzchar(x)], collapse = ";"))})
 
   ##### Transposon activating stage #####
-  cat("Transposons; ")
+  cat(" Transposons;")
   # 1 Set transposon players
   s0.tpn = strsplit(gsub("^;$","", sim.df$transposon), ";")
   s0.tpnLen = lengths(s0.tpn)
@@ -216,7 +218,7 @@ repeat{
   if(nrow(s0.final)<1){ eLim = -1; break }
 
   ##### Gene recombination stage (assume no transposons excise / add complications) #####
-  cat("Recombination\n")
+  cat(" Recombination\n")
   # 1 Check if there is recombination happening
   reCom = TRUE
   reCom.df = as.data.frame(matrix(0, nrow = hPop, ncol = length(rG)))
@@ -224,8 +226,21 @@ repeat{
   for(i in seq_len(length(rG))){reCom.df[,i] = as.numeric(grepl(paste0("g0", colnames(reCom.df)[i]), sim.df$transposon, fixed = TRUE)) + as.numeric(grepl(paste0("g1", colnames(reCom.df)[i]), sim.df$transposon, fixed = TRUE))};rm(i)
 
   # 2 Number of genes going to be recombined
-  numGenes = pmin(floor(rep(host.0$recom, hPop) * ((lengths(strsplit(sim.df$transposon, ";")) / (geneIn$numGene*2)) * (host.0$recomH1!="switch") + 1) * as.numeric(!(apply(reCom.df, 1, max) == 2)) * geneIn$numGene*2), geneIn$numGene*2)
-  if(all(apply(reCom.df, 1, max) == 2) | host.0$recom==0 | all(numGenes==0)){reCom = FALSE}
+  gRecRate = host.0$recom * nrow(geneIn$gene) / 5000 # [202610231012] So 1/1000 genes undergo recombination at the highest rates; this is the product of the proportion of the population undergoing recombination, and the probability of a gene being affected by a recombination in such an isolate; this probability is the product of the number of recombinations, and the length of the recombinations (e.g. ~1% of pneumococci undergo transformation in culture; ~10% of a particular locus undergo recombination; if we estimate a mean length of 5kb, this implies ~40 recombinations per individual); so if you work out how many genes are affected by each recombination on average, you can scale this up such that an individual locus has a maximal recombination rate of ~0.001
+  numGenes = lengths(strsplit(sim.df$transposon, ";"))
+  nG.no = which(numGenes==0)
+  numGenes = data.frame(tpn = tPn.io(paste(sim.df$transposon, collapse = ";"))$size, host = rep(seq_len(hPop), numGenes))
+  numGenes = aggregate(tpn ~ host, data = numGenes, FUN = sum)
+  if(length(nG.no)>0){
+    nG.no = as.data.frame(matrix(c(nG.no, rep(0, length(nG.no))), ncol = 2))
+    colnames(nG.no) = colnames(numGenes)
+    numGenes = rbind(numGenes, nG.no)
+    numGenes = numGenes[order(numGenes$host),]
+  }
+  numGenes = gRecRate * (mean(geneIn$gene$length) * (1 + numGenes$tpn / geneIn$genome[2] * (host.0$recomH1!="switch")) * as.numeric(!(apply(reCom.df, 1, max) == 2)))
+  for(i in seq_len(hPop)){numGenes[i] = rpois(1, lambda = numGenes[i])}
+  numGenes = pmin(numGenes, nrow(geneIn$gene))
+  if(all(apply(reCom.df, 1, max) == 2) | gRecRate==0 | all(numGenes==0)){reCom = FALSE}
 
   if(reCom){
   # 3 Hotspots selection
@@ -234,7 +249,8 @@ repeat{
   hRecom = which(numGenes>0)
 
   # 4 Nearby gene regions
-  rGSel = NULL; for(i in hRecom){ rGSel = rbind(rGSel, data.frame(gene = gRc.prob(rGenes$gene[rGenes$host==i]), host = i)) };rm(i)
+  rGSel = NULL; for(i in hRecom){ rGSel = rbind(rGSel, cbind(gRc.prob(rGenes$gene[rGenes$host==i]), i)) };rm(i)
+  colnames(rGSel)[3] = "host"
 
   # 5 Probability of each gene in each host being selected
   rGenes = matrix(rep(geneIn$gene$length, hPop), ncol = hPop)
@@ -256,38 +272,59 @@ repeat{
   rGenes = rGenes / rowSums(rGenes)
 
   # 6 Gene recombination
-  rGSel$src = NA
   sDF.replace.success = s0.final[which(s0.final$host==0),] # initiate empty datafrmae inheriting structure of s0.final
   s0.donor = s0.final
+  if(host.0$cell=="diploid"){
+    rGSel$src = rGSel$host; rGSel$chromosome = (as.numeric(substr(rGSel$locus_tag, 1, 1)) + 1) %% 2
+    rGSel$donor = paste0(rGSel$chromosome, substring(rGSel$locus_tag, 2))
+  }else{
+    rG.hap = unique(rGSel[,c("contiguous", "host")])
+    rG.hap$src = NA
+    rGSel$donor = rGSel$locus_tag
+    for(i in seq_len(nrow(rG.hap))){
+      rG.t = rGenes[which(geneIn$gene$locus_tag %in% rGSel$locus_tag[which(rGSel$contiguous==rG.hap$contiguous[i] & rGSel$host==rG.hap$host[i])]),-rG.hap$host[i], drop = FALSE]
+      rG.hap$src[i] = sample(seq_len(hPop)[-rG.hap$host[i]], 1, prob = colSums(rG.t)/sum(rG.t)) # recombination gene source
+    };rm(i,rG.t)
+    rG.hap$chromosome = sample(c(0,1), nrow(rG.hap), replace = TRUE)
+    rGSel$src = rG.hap$src[match(paste(rGSel$contiguous,rGSel$host), paste(rG.hap$contiguous,rG.hap$host))]
+    rGSel$chromosome = rG.hap$chromosome[match(paste(rGSel$contiguous,rGSel$host), paste(rG.hap$contiguous,rG.hap$host))]
+  }
+
   for(i in seq_len(nrow(rGSel))){
-    g.tpn = paste0("g",rGSel$gene[i])
-    rGSel$src[i] = sample(seq_len(hPop)[-rGSel$host[i]], 1, prob = rGenes[geneIn$gene$locus_tag==rGSel$gene[i],-rGSel$host[i]]) # recombination gene source
+    g.tpn = paste0("g", rGSel$locus_tag[i])
+    d.tpn = paste0("g", rGSel$donor[i])
     sim.df$tpnFail[rGSel$host[i]] = sub("^;", "", sub(";$", "", sub(g.tpn, "", sim.df$tpnFail[rGSel$host[i]]))) # tpnFail rescue
 
     # Transposon HGT
-    sDF.replace = s0.donor[which(s0.donor$gene == g.tpn & s0.donor$host == rGSel$src[i]),]
+    sDF.replace = s0.donor[which(s0.donor$gene == d.tpn & s0.donor$host == rGSel$src[i]),]
     s0.final = s0.final[!(s0.final$gene == g.tpn & s0.final$host == rGSel$host[i]),]
     if(nrow(sDF.replace)>0){
+      if(d.tpn != g.tpn){ sDF.replace$tpn = tPn.flat(sDF.replace$tpn, ori = rGSel$chromosome[i]); sDF.replace$gene = g.tpn }
       sDF.replace$host = rGSel$host[i]
       sDF.replace.success = rbind(sDF.replace.success, sDF.replace)
     }
-  };rm(i, g.tpn)
-  rGSel$chromosome = sample(c(0,1), nrow(rGSel), replace = TRUE)
+  };rm(i, g.tpn, d.tpn)
 
   # 7 Intergenic recombination (if prior and post region gene recombination from the same source)
-  rGSel = rGSel[order(rGSel$host, rGSel$chromosome, rGSel$gene),]
-  rGSel$gLoc = match(rGSel$gene, geneIn$gene$locus_tag)
+  rGSel = rGSel[order(rGSel$host, rGSel$chromosome, rGSel$locus_tag),]
+  rGSel$gLoc = match(rGSel$locus_tag, geneIn$gene$locus_tag)
   rGSel$iReplace = FALSE
   for(i in seq_len(nrow(rGSel)-1)){
     if(rGSel$host[i]==rGSel$host[i+1] && rGSel$src[i]==rGSel$src[i+1] && rGSel$chromosome[i]==rGSel$chromosome[i+1] && rGSel$gLoc[i+1]==(rGSel$gLoc[i]+1)){rGSel$iReplace[i+1] = TRUE}
   };rm(i)
   if(any(rGSel$iReplace)){
     rGenes = rGSel[rGSel$iReplace,]
-    rGenes$gene = paste0("i", rGenes$gene)
+    rGenes$locus_tag = paste0("i", rGenes$locus_tag); rGenes$donor = paste0("i", rGenes$donor)
     for(i in seq_len(nrow(rGenes))){
-      tmp = s0.donor[which(s0.donor$gene==rGenes$gene[i] & s0.donor$host==rGenes$src[i]),]
-      s0.final = s0.final[!(s0.final$gene==rGenes$gene[i] & s0.final$host==rGenes$host[i]),]
-      if(nrow(tmp)>0){ tmp$host = rGenes$host[i]; sDF.replace.success = rbind(sDF.replace.success, tmp) }
+      tmp = s0.donor[which(s0.donor$gene==rGenes$donor[i] & s0.donor$host==rGenes$src[i]),]
+      s0.final = s0.final[!(s0.final$gene==rGenes$locus_tag[i] & s0.final$host==rGenes$host[i]),]
+      if(nrow(tmp)>0){
+        if(rGenes$donor[i] != rGenes$locus_tag[i]){
+          tmp$tpn = tPn.flat(tmp$tpn, ori = rGenes$chromosome[i])
+          tmp$gene = rGenes$locus_tag[i]
+        }
+        tmp$host = rGenes$host[i]; sDF.replace.success = rbind(sDF.replace.success, tmp)
+      }
     };rm(i)
   }
   s0.final = rbind(s0.final, sDF.replace.success)
@@ -308,10 +345,6 @@ repeat{
 
 cat(date(),": printing warnings",argv[3],"-",argv[5],"\n")
 print(warnings())
-
-##### Simulation summary #####
-cat(date(),": analysis started",argv[3],"-",argv[5],"\n")
-source("sim_summary.r")
 
 ##### Simulation record export #####
 if(!(tolower(xIn("full result")) %in% c("yes", "true"))){

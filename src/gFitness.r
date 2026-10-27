@@ -8,7 +8,7 @@
 # date: 20260811
 
 argv = (commandArgs(T))
-if(length(argv) < 2){argv=c("../raw/input.csv", "../data/tnseq.csv")}
+if(length(argv) < 2){argv=c("../data/input.csv", "../data/tnseq.csv", 1)}
 
 source("func.r")
 # library(glmmTMB)
