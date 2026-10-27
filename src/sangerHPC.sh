@@ -18,10 +18,15 @@ if [[ `command -v bsub >/dev/null 2>&1` ]];then
   sed -e "s/mAx/$(( `wc -l < ../data/rerun.csv` ))/" sangerHPC_child.sh > sC.sh
   bsub < sC.sh
 else
-  sed -e "s/LSB_JOBINDEX/1/" sangerHPC_child.sh > sC.sh
+  lIm=26
+  sed -e "s/LSB_JOBINDEX/1/" -e "s/ --rm//" sangerHPC_child.sh > sC.sh
   i0=`wc -l < ../data/rerun.csv`
   for i in `seq 1 ${i0}`;do
+    while (( $(jobs -rp | wc -l) >= lIm ));do
+      wait -n
+    done
     bash sC.sh ${i} 1> ../work/pj02-${i}.txt &
+    echo -e "`date`: Submitted ${i}"
   done
 fi
 
