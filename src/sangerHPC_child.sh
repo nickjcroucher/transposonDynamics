@@ -17,7 +17,7 @@
 
 PATH="/software/isg/private/wrappers/apptainer/1.4.0:$PATH"
 
-apptainer run --rm --bind ${PWD}/../data:/data --pwd /src transposondynamics_latest.sif bash simMaster.sh ../raw/input.csv ../raw/seed.csv ../raw/scenario.csv ${LSB_JOBINDEX}
+apptainer run --rm --bind ${PWD}/../data:/data --pwd /src transposondynamics_latest.sif bash simMaster.sh ../data/input.csv ../raw/seed.csv ../raw/scenario.csv $LSB_JOBINDEX
 
 exit
 ## any BSUB -J with the correct format, no matter at any line, later line will replace earlier lines # BSUB -J "tdy[1-360]"
