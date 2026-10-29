@@ -14,7 +14,8 @@ mkdir -p ../{data,work}
 [[ -f transposondynamics_latest.sif ]] && rm transposondynamics_latest.sif
 apptainer pull docker://ghcr.io/nickjcroucher/transposondynamics:latest
 
-if [[ `command -v bsub >/dev/null 2>&1` ]];then
+# if [[ `command -v bsub >/dev/null 2>&1` ]];then
+if [[ $USER!="ubuntu" ]];then
   sed -e "s/mAx/$(( `wc -l < ../data/rerun.csv` ))/" sangerHPC_child.sh > sC.sh
   bsub < sC.sh
 else

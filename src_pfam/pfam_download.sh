@@ -16,4 +16,5 @@ while read -r l;do
 done < ../data/CL0219_category.csv
 
 exit
-
+# curl "https://www.ebi.ac.uk/interpro/api/proteome/uniprot/entry/InterPro/?page_size=1000&extra_fields=counters%3Aentry-protein" > ../data/CL0219/proteome.json
+# https://www.ebi.ac.uk/interpro/api/proteome/uniprot/entry/InterPro/?page_size=100&extra_fields=counters%3Aentry-protein
