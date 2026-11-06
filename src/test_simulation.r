@@ -6,11 +6,11 @@
 #     or, inside R: testthat::test_file("test_simulation.r")
 # out: test report on screen; Rscript exits with status 1 if any test fails or errors
 # arg: none; optional environment switch:
-#      TPN_SKIP_INTEGRATION=true   skip the end-to-end simulate.r runs (the slow part: 18 short runs)
-# date: 20261027
+#      TPN_SKIP_INTEGRATION=true   skip the end-to-end simulate.r runs (the slow part: 20 short runs)
+# date: 20261027, 20261106
 #
 # Needs internet access: func.r and func_analysis.r source helper scripts (eta.r, colour.r) from GitHub.
-# Input file: simulate.r's default (../data/input.csv) when it exists, otherwise the committed ../raw/input.csv
+# Input file: simulate.r's default input when it exists, otherwise the committed ../raw/input.csv
 # (data/ is git-ignored, so CI uses the raw/ copy). Templates always come from ../raw, as func.r reads them.
 # The suite only READS the project folders. Everything that writes (mock genomes, simulate.r and sim_summary.r
 # outputs) happens in throwaway copies of the project under tempdir(), which R deletes when the session ends.
@@ -51,7 +51,7 @@ sim_defaults <- local({
 })
 if (length(sim_defaults) < 5) stop("could not read the default arguments on simulate.r's argv line", call. = FALSE)
 from_code <- function(p) normalizePath(file.path(code_dir, p), mustWork = FALSE)
-f_input <- from_code(sim_defaults[1])                                 # simulate.r's default (../data/input.csv)
+f_input <- from_code(sim_defaults[1])                                 # simulate.r's default input
 if (!file.exists(f_input)) f_input <- from_code("../raw/input.csv")   # data/ is git-ignored: use the committed copy
 f_seed <- from_code(sim_defaults[2])
 f_scen <- from_code(sim_defaults[4])
@@ -795,6 +795,8 @@ scenario_rows <- function() {
   hap_rec <- host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX, genotoxic = 0,
                   homologousAutoRecom = 0)
   dip_rec <- host(recom = 0.1, recomH1 = "switch", cell = "diploid", hAReomH1 = FX, genotoxic = 0)
+  hap_rep0 <- host(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0, homologousAutoRecom = 0)
+  hap_rep1 <- host(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0, homologousAutoRecom = 1)
   def <- c(NA, NA)
   k <- suppressWarnings(as.numeric(sim_defaults[5]))
   if (file.exists(f_scen)) {
@@ -819,7 +821,9 @@ scenario_rows <- function() {
                                         homologousAutoRecom = 0.9)),
     inert = c(tpn(0, 0), host(recom = 0, cell = "diploid", hAReomH1 = FX, genotoxic = 0)),
     hgt = c(tpn(0, 0), hap_rec),            # inert transposons: only inheritance and recombination change them
-    conversion = c(tpn(0, 0), dip_rec)
+    conversion = c(tpn(0, 0), dip_rec),
+    jumps_no_repair = c(tpn(0.1, 0), hap_rep0),     # jumps only, no copies, no recombination
+    jumps_full_repair = c(tpn(0.1, 0), hap_rep1)
   )
 }
 
@@ -918,6 +922,20 @@ copy_keys <- function(cell) {
 }
 genome_keys <- function(tr_row, g) {    # keys of parent genome g (1..n copy 0, n+1..2n copy 1)
   copy_keys(tr_row[(g - 1) %% length(tr_row) + 1])[[(g - 1) %/% length(tr_row) + 1]]
+}
+# For every host record after generation 0: transposons gained versus its two parent genomes, and how many
+# carry the current generation stamp (placed by a jump or copy in that generation).
+count_changes <- function(e) {
+  do.call(rbind, lapply(2:nrow(e$rec.offspring), function(r) {
+    t(vapply(seq_len(ncol(e$rec.offspring)), function(j) {
+      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
+      before <- sum(vapply(k, function(g) length(genome_keys(e$rec.transposon[r - 1, ], g)), integer(1)))
+      m <- tpn_fields(e$rec.transposon[r, j])$m
+      after <- if (is.null(m)) 0 else nrow(m)
+      placed <- if (is.null(m)) 0 else sum(as.numeric(m[, 3]) == r - 1)
+      c(change = after - before, placed = placed)
+    }, numeric(2)))
+  }))
 }
 # Host records holding the same transposon twice (identical in every field except 'valid').
 same_spot_duplicates <- function(tr) {
@@ -1137,6 +1155,43 @@ test_that("end to end: gene conversion copies the homolog's transposons in diplo
   }
   expect_gt(gained, 0)
   expect_true(length(foreign) == 0, info = paste("transposons not taken from the homolog, e.g.", foreign[1]))
+})
+
+test_that("end to end: without repair, a jump moves a transposon and leaves its old site empty", {
+  skip_integration()
+  run <- expect_scenario("jumps_no_repair")  # jumps only, repair rate 0, no recombination
+  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
+  ch <- count_changes(load_rda(run$sim))
+  expect_true(sum(ch[, "placed"]) > 0, info = "no transposon jumped, so the check was not exercised")
+  expect_true(all(ch[, "change"] == 0),
+              info = paste(sum(ch[, "change"] != 0), "host records gained or lost transposons although only jumps happened"))
+})
+
+test_that("end to end: a repaired jump restores the homolog's transposon at the old site", {
+  skip_integration()
+  run <- expect_scenario("jumps_full_repair")  # jumps only, repair rate 1; haploid, so the homolog always carries it
+  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
+  ch <- count_changes(load_rda(run$sim))
+  expect_true(sum(ch[, "placed"]) > 0, info = "no transposon jumped, so the check was not exercised")
+  expect_true(all(ch[, "change"] == ch[, "placed"]),
+              info = "each jump must add exactly one transposon: the copy restored from the homolog")
+})
+
+test_that("end to end: jumps and copies land at positions spread over the genome", {
+  skip_integration()
+  it <- integration()
+  for (name in c("no_jumps", "jumps_no_repair")) {                 # copies only; jumps only
+    skip_if_not(isTRUE(it$ok[[name]]), paste("no template rows match scenario", name))
+    run <- run_sim(sb_main, it$index[[name]])
+    skip_if(run$status != 0 || !file.exists(run$sim), paste("the", name, "run failed (see its own test)"))
+    m <- tpn_fields(as.vector(load_rda(run$sim)$rec.transposon[-1, ]))$m
+    expect_false(is.null(m), info = paste(name, ": no transposons recorded"))
+    if (is.null(m)) next
+    placed <- m[as.numeric(m[, 3]) > 0, , drop = FALSE]           # stamped after generation 0: jumped or copied
+    expect_true(nrow(placed) > 0, info = paste(name, ": nothing jumped or copied"))
+    expect_true(length(unique(placed[, 1])) > 5,
+                info = paste(name, ": new positions fall in only", length(unique(placed[, 1])), "genes or gaps"))
+  }
 })
 
 test_that("end to end: evolved rates are carried by transposons that move; unmoved ones keep the template rate", {

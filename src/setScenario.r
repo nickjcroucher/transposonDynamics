@@ -7,6 +7,8 @@
 # arg: 0
 # date: 20260707,20260721
 
+pRt = 0
+
 ##### Set transposon simulation scenarios #####
 cat(date(),": set transposon table\n")
 gEne = ""
@@ -41,7 +43,7 @@ aa = apply(uID.set,1,paste0, collapse = "")
 aa = aa[!(aa %in% c("NA", "NAN", "INF", "TRUE", "FALSE"))]
 a$uniqID = aa[seq_len(nrow(a))]; rm(aa)
 
-write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)
+if(pRt>0){write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)}
 
 ##### Set cell simulation scenarios #####
 cat(date(),": set host cell table\n")
@@ -62,12 +64,12 @@ for(i in 1:length(pAr)){
 
 colnames(a0)[-(1:2)] = names(pAr)
 row.names(a0) = NULL
-write.csv(a0, "../raw/template-host.csv", row.names = F, quote = F)
+if(pRt>0){write.csv(a0, "../raw/template-host.csv", row.names = F, quote = F)}
 
 ##### Set overall scenario to do simulation #####
 cat(date(),": set scenario table\n")
 sCe = data.frame(transposon = a$uniqID, host = rep(row.names(a0), each = nrow(a)))
-write.csv(sCe, "../raw/scenario.csv", row.names = F, quote = F)
+if(pRt>0){write.csv(sCe, "../raw/scenario.csv", row.names = F, quote = F)}
 
 ##### f: Set rerun scenarios #####
 sceSet = function(jp = 0, jH = "fixed", cp = 0, cH = "fixed", cD = "both", rc = 0, rH = "switch", cT = "haploid", hAR = 0, hH = "fixed", tE = FALSE, gT = 0, tpn = a, host = a0, sce = sCe){
@@ -84,4 +86,4 @@ sceSet = function(jp = 0, jH = "fixed", cp = 0, cH = "fixed", cD = "both", rc = 
 
 ##### Set scenarios #####
 res = sceSet(jp = unique(a$jumpRate), cp = unique(a$copyRate), rc = unique(a0$recom), cT = unique(a0$cell), hAR = c(.2, .5, .8))
-write.table(unique(res), "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)
+if(pRt>0){write.table(unique(res), "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)}

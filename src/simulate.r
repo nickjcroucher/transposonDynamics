@@ -8,7 +8,7 @@
 # date: 20260623, 20261006
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../data/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "211681")} # 208225 vs 211681
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "186625")} # 208225 vs 211681; no recombination jump 189253 copy 189220 both 189217; highest everything haploid 186625
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -134,11 +134,8 @@ repeat{
   s0.tpnLen = lengths(s0.tpn)
   if(sum(s0.tpnLen)==0){ eLim = -1; break }
   s0.tpn = data.frame(tpn = unlist(s0.tpn), host = rep(seq_len(length(s0.tpn)), s0.tpnLen), fitness = 1)
-  s0.tpn = sDF.replace = cbind(s0.tpn[s0.tpn$tpn!="",], tPn.io(s0.tpn$tpn))
+  s0.tpn = cbind(s0.tpn[s0.tpn$tpn!="",], tPn.io(s0.tpn$tpn))
   s0.tpn$numTpn = rep(s0.tpnLen, s0.tpnLen)
-  s0.final = s0.tpn[!(s0.tpn$valid),] # spliced transposons are grounded
-  s0.final$numTpn = NULL
-  s0.tpn = s0.tpn[s0.tpn$valid,]
 
   # 2 Activity rate modifications
   s0.tpn$jumpRateFinal = s0.tpn$jumpRate
@@ -156,66 +153,80 @@ repeat{
     s0.tpn$jumpRateFinal = s0.tpn$jumpRateFinal * ifelse(runif(nrow(s0.tpn)) > xIn("percentage transposon perturbation genotoxic")/100, 1, 0) * ifelse(runif(nrow(s0.tpn)) > xIn("percentage chance transposon perturbation boost")/100, 1, xIn("percentage amplitude transposon perturbation boost")/100)
   }
 
-  # 3 Jump? Copy? Replicating number? (jump first, then copy)
-  s0.tpn[,c("mv", "cp", "cpRep")] = matrix(c(runif(nrow(s0.tpn) * 2), rpois(nrow(s0.tpn), 1)), ncol = 3)
+  # 3 Valid for activity? Jump? Copy? Replicating number? Replacement if jumped?
+  ## 3.1 Set probabilities for activities
+  s0.tpn[,c("mv", "mvhAR", "mvLoc", "cp", "cpRep")] = matrix(c(runif(nrow(s0.tpn) * 4), rpois(nrow(s0.tpn), 1)), ncol = 5)
   while(any(s0.tpn$cpRep < 1)){s0.tpn$cpRep[which(s0.tpn$cpRep < 1)] = rpois(sum(s0.tpn$cpRep < 1), 1)}
-  s0.tpn$mv = ifelse(s0.tpn$mv > s0.tpn$jumpRateFinal, NA, s0.tpn$mv)
-  s0.tpn$cp = ifelse(s0.tpn$cp > s0.tpn$copyRateFinal, NA, s0.tpn$cp)
+  s0.tpn$mv = ifelse(s0.tpn$valid, ifelse(s0.tpn$mv > s0.tpn$jumpRateFinal, NA, s0.tpn$mv), NA)
+  s0.tpn$mvhAR = !(s0.tpn$mvhAR > as.numeric(sim.df$hARecomRate[s0.tpn$host])) # TRUE = success homologous recombine
+  s0.tpn$cp = ifelse(s0.tpn$valid, ifelse(s0.tpn$cp > s0.tpn$copyRateFinal, NA, s0.tpn$cp), NA)
 
-  # 4 Get transposons with activity
-  s0.final = rbind(s0.final, s0.tpn[which(is.na(s0.tpn$mv)),colnames(s0.final)])
-  tpns = c(which(!is.na(s0.tpn$mv)), rep(which(!is.na(s0.tpn$cp)), s0.tpn$cpRep[which(!is.na(s0.tpn$cp))]))
-  if(length(tpns)>0){
-    tpns = s0.tpn[tpns,]
-    tpns = tpns[order(tpns$host),]
-    tpns$replacement = NA
+  ## 3.2 Homolog lookup
+  s0.tpn$mvSub = NA
+  for(i in unique(s0.tpn$host)){
+    r = which(s0.tpn$host == i)
+    hom = paste0(substr(s0.tpn$gene[r],1,1), (as.numeric(substr(s0.tpn$gene[r],2,2)) + 1) %% 2, substring(s0.tpn$gene[r],3))
+    s0.tpn$mvSub[r] = r[match(paste(hom, s0.tpn$location[r]), paste(s0.tpn$gene[r], s0.tpn$location[r]))]
+  };rm(i, r, hom)
 
-  # 5 Get replacement transposon for jumps
-    if(any(!is.na(tpns$mv))){
-      tpns$replacement = sim.df$hARecomRate[match(tpns$host, row.names(sim.df))]
-      tpns$replacement = ifelse(is.na(tpns$mv), NA, tpns$replacement)
-      tpns$replacement[which(!is.na(tpns$replacement))] = runif(sum(!is.na(tpns$replacement))) <= tpns$replacement[which(!is.na(tpns$replacement))]
-      sim.df.fail = aggregate(replacement ~ host, data = tpns, FUN = prod)
-      sim.tpn.fail = tpns[!is.na(tpns$replacement) & tpns$replacement==0,c("host", "gene")]
-      if(nrow(sim.tpn.fail)>0){
-        sim.tpn.fail = aggregate(gene ~ host, data = sim.tpn.fail, FUN = function(x){paste(x, collapse = ";")})
-        sim.df$tpnFail = sim.tpn.fail$gene[match(as.numeric(row.names(sim.df)), sim.tpn.fail$host)]
-        sim.df$tpnFail[is.na(sim.df$tpnFail)] = ""
-      }
-      ## Use homolog's transposons
-      ok = unique(tpns[which(tpns$replacement==1), c("gene", "location", "host")])
-      ok$repG = paste0(substr(ok$gene,1,1), (as.numeric(substr(ok$gene,2,2)) + 1) %% 2, substr(ok$gene,3,nchar(ok$gene)))
-      hom = sDF.replace[paste(sDF.replace$host, sDF.replace$gene, sDF.replace$location) %in% paste(ok$host, ok$repG, ok$location),]
-      if(nrow(hom)>0){
-        cp = as.numeric(substr(hom$gene,2,2))
-        hom$tpn = mapply(function(s, k){tPn.flat(s, ori = k)}, hom$tpn, cp, USE.NAMES = FALSE)
-        hom$gene = paste0(substr(hom$gene,1,1), (cp + 1) %% 2, substr(hom$gene,3,nchar(hom$gene)))
-        s0.final = rbind(s0.final, hom)
-      }
-    }
+  # 4 Scenario deductions
+  ## 4.1 tpnFail
+  tFail = s0.tpn[which(!is.na(s0.tpn$mv) & !s0.tpn$mvhAR), c("gene", "host")]
+  for(i in unique(tFail$host)){sim.df$tpnFail[i] = paste0(tFail$gene[which(tFail$host==i)], collapse = ";")};rm(i, tFail)
 
-  # 6 Transposon relocation
-    tpns$loc = runif(nrow(tpns))
-    tpns$tpn = strsplit(tPn.io(tpns[,which(colnames(tpns) %in% colnames(tPn.0))]), ";")[[1]] # incorporating evolved jump/copy rates
-    tpns = tPn.newloc(tpns, gen = gEn)
+  ## 4.2 Potentially-modified parameter incorporation
+  s0.tpn$tpnEvo = strsplit(tPn.io(s0.tpn[,which(colnames(s0.tpn)==colnames(tPn.0)[1]):which(colnames(s0.tpn)==colnames(tPn.0)[ncol(tPn.0)])]), ";")[[1]]
 
-  ## 6.1 Copy direction allowed?
-    if(any(tPn.0$copyDir!="both") & any(!is.na(tpns$cp))){
-      tpns.cp = tpns[!is.na(tpns$cp),]
-      tpns = tpns[is.na(tpns$cp),]
-      tpns.cp$dIr = apply(tpns.cp, 1, FUN = function(x){return(tPn.comLoc(c(x[1], x[23])))}) == tpns.cp$copyDir
-      tpns.cp$dIr[tpns.cp$copyDir=="both"] = TRUE
-      tpns = rbind(tpns, tpns.cp[tpns.cp$dIr, which(colnames(tpns.cp) %in% colnames(tpns))]); rm(tpns.cp)
-    }
+  # 5 Transposons migration
+  i.mv = which(!is.na(s0.tpn$mv))
+  i.cp = which(!is.na(s0.tpn$cp))
 
-  ## 6.2 New transposons inclusion
-    tpns$tpn = tpns$newLoc
-    tpns = cbind(tpns[,1:3], tPn.io(tpns$tpn))
+  ## 5.1 mv
+  if(length(i.mv) > 0){
+    s0.final = s0.tpn[-i.mv, 1:3]
+    s0.sub = as.numeric(s0.tpn$mvSub[i.mv[s0.tpn$mvhAR[i.mv] & !is.na(s0.tpn$mvSub[i.mv])]]) # jump tpn replacements
+    s0.sub = s0.tpn[s0.sub,1:3]
+    s0.sub$tpn = paste0(substr(s0.sub$tpn,1,1), (as.numeric(substr(s0.sub$tpn,2,2)) + 1) %% 2, substr(s0.sub$tpn,3,nchar(s0.sub$tpn))) # chromosome location change
+    tpns = s0.tpn[i.mv,1:3]
+    tpns$tpn = s0.tpn$tpnEvo[i.mv]
+    tpns$newLoc = runif(nrow(tpns)) # draw new locations
+    for(i in unique(tpns$host)){ # record new locations into tpn notations
+      i0 = reGeneDF(tPn = paste0(s0.tpn$tpn[s0.tpn$host==i], collapse = ";"), gene.df = geneIn$gene)
+      for(i1 in which(tpns$host==i)){
+        i2 = tPn.reloc(num = tpns$newLoc[i1], tpn = tpns$tpn[i1], gEn = gEn, gDF = i0)
+        tpns$tpn[i1] = i2$tpn
+        i0 = i2$gDF
+      };rm(i1)
+    };rm(i,i0,i.mv)
+    s0.final = rbind(s0.final, tpns[,1:3])
+    s0.final = rbind(s0.final, s0.sub); rm(s0.sub)
+  }else{ s0.final = s0.tpn[, 1:3] }
 
-  # 7 Harmonize all transposons from activity stage
-    s0.final = rbind(s0.final, tpns[,which(colnames(tpns) %in% colnames(s0.final))])
+  ## 5.2 cp
+  if(length(i.cp) > 0){
+    tpns = s0.tpn[rep(i.cp, s0.tpn$cpRep[i.cp]),]
+    tpns$tpn = tpns$tpnEvo
+    tpns$mvLoc = runif(nrow(tpns))
+    for(i in unique(tpns$host)){ # record new locations into tpn notations
+      i0 = reGeneDF(tPn = paste0(s0.tpn$tpn[s0.tpn$host==i], collapse = ";"), gene.df = geneIn$gene)
+      for(i1 in which(tpns$host==i)){
+        i2 = tPn.reloc(num = tpns$mvLoc[i1], tpn = tpns$tpn[i1], gEn = gEn, gDF = i0)
+        if(tpns$copyDir[i1] == "both"){i3 = c(tpns$copyDir[i1], "terminus", "origin")}else{i3 = tpns$copyDir[i1]}
+        if(tPn.comLoc(oldNew = c(tpns$tpn[i1], i2$tpn), gDF = i0) %in% i3){
+          tpns$tpn[i1] = i2$tpn
+          i0 = i2$gDF
+      }else{ tpns$tpn[i1] = NA }};rm(i1, i3)
+    };rm(i,i0,i.cp)
+    s0.final = rbind(s0.final, tpns[!is.na(tpns$tpn),1:3])
   }
+
+  ## 5.3 validity check
+  for(i in unique(s0.final$host)){
+    r = which(s0.final$host == i)
+    s0.final$tpn[r] = strsplit(tPn.x(paste0(s0.final$tpn[r], collapse = ";")), ";")[[1]]
+  };rm(i, r)
   if(nrow(s0.final)<1){ eLim = -1; break }
+  s0.final = cbind(s0.final, tPn.io(s0.final$tpn))
 
   ##### Gene recombination stage (assume no transposons excise / add complications) #####
   cat(" Recombination\n")

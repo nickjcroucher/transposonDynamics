@@ -128,7 +128,7 @@ tPn.reloc = function(num, tpn, gEn = 0, gDF = geneIn$gene){
 }
 
 ##### Check transposons overlap #####
-tPn.x = function(tpns){
+tPn.x = function(tpns){ # input "tpn1;tpn2;tpn3"...
   if(tpns==""){return("")}
   tpns = tPn.io(tpns)
   tpns$valid = TRUE

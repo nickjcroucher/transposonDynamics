@@ -15,12 +15,13 @@ mkdir -p ../{data,work}
 apptainer pull docker://ghcr.io/nickjcroucher/transposondynamics:latest
 
 # if [[ `command -v bsub >/dev/null 2>&1` ]];then
-if [[ $USER!="ubuntu" ]];then
+if [[ $USER != "ubuntu" ]];then
+# if [[ `hostname -I | cut -f 1 -d "."` != 192 ]];then
   sed -e "s/mAx/$(( `wc -l < ../data/rerun.csv` ))/" sangerHPC_child.sh > sC.sh
   bsub < sC.sh
 else
   lIm=26
-  sed -e "s/LSB_JOBINDEX/1/" -e "s/ --rm//" sangerHPC_child.sh > sC.sh
+  sed -e "s/LSB_JOBINDEX/1/" sangerHPC_child.sh > sC.sh
   i0=`wc -l < ../data/rerun.csv`
   for i in `seq 1 ${i0}`;do
     while (( $(jobs -rp | wc -l) >= lIm ));do

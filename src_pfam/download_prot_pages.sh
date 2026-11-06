@@ -9,7 +9,8 @@
 
 set -uo pipefail
 
-START_URL='https://www.ebi.ac.uk/interpro/api/proteome/uniprot/entry/InterPro/?page_size=300&extra_fields=counters%3Aentry-protein'
+START_URL='https://www.ebi.ac.uk/interpro/api/proteome/uniprot/entry/InterPro/?page_size=100&extra_fields=counters%3Aentry-protein'
+#START_URL='https://www.ebi.ac.uk/interpro/api/proteome/uniprot/entry/InterPro/?page_size=300&extra_fields=counters%3Aentry-protein'
 OUT_DIR="${1:-prot_json}"
 PREFIX="prot_"
 PAUSE=1          # seconds between requests, as in InterPro's own example scripts
