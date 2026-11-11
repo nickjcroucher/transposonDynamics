@@ -13,6 +13,7 @@ rec.host0 = rec.host[seq_len(gEn), , drop = FALSE]
 rec.offspring0 = rec.offspring[seq_len(gEn), , drop = FALSE]
 rec.tpnCount0 = rec.tpnCount[seq_len(gEn), , drop = FALSE]
 rec.transposon0 = rec.transposon[seq_len(gEn), , drop = FALSE]
+rec.Fitness0 = rec.Fitness[seq_len(gEn), , drop = FALSE]
 # for(i in c("ape", "stringdist")){library(i, character.only=T)};rm(i)
 pdf(paste0("../data/ana--",argv[3],"-",argv[5],".pdf"))
 
@@ -27,7 +28,24 @@ r.os0[1,] = paste0(seq_len(ncol(r.os0)),";",seq_len(ncol(r.os0)))
 rec.hostTraject = fAmily(r.os0, "haploid")/ncol(r.os0)
 suppressWarnings(matplot(x = seq_len(nrow(rec.hostTraject))-1, y = rec.hostTraject*100, col = cBp, xlim = c(0, gEn.max), ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of Initial host (df = rec.hostTraject)\nrep = ",argv[3],", scenario = ",argv[5])))
 
+# cat(date(),": Population fitness evenness",argv[3],"-",argv[5],"\n")
+sDi = -rowSums(rec.Fitness0 * log(rec.Fitness0 + min(rec.Fitness0[rec.Fitness0>0])))
+plot(x = seq_len(gEn)-1, y = sDi, type = "l", xlim = c(0, gEn.max), ylim = c(0, max(sDi)), xlab = "Generation", ylab = "Diversity index", main = paste0("Shannon diversity index on population fitness [N = ",hPop,"] \n(df = rec.Fitness) rep = ",argv[3],", scenario = ",argv[5]))
+
 ##### Transposon parameters mapping #####
+# cat(date(),": Distribution of transposons in the population",argv[3],"-",argv[5],"\n")
+tIh = apply(rec.tpnCount0, 1, density)
+i0 = i1 = c(); for(i in seq_len(length(tIh))){
+  i0 = range(i0, tIh[[i]]$x)
+  i1 = range(i1, tIh[[i]]$y)
+};rm(i)
+plot(x = i0, y = i1, col = "#00000000", xlab = "Transposon count", ylab = "Density", main = paste0("Distribution of transposon copy number per generation [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
+cBr = rainbow(ceiling(nrow(rec.tpnCount0)/.7))[seq_len(nrow(rec.tpnCount0))]
+for(i in seq_len(length(tIh))){
+  # hist(rec.tpnCount0[i,], border = "", add = TRUE)
+  lines(tIh[[i]], lwd = 2, col = cBr[(i %% length(cBr)) + 1])
+};rm(i,i0, i1)
+
 # cat(date(),": Transposon counts",argv[3],"-",argv[5],"\n")
 plot(x = seq_len(gEn)-1, y = log10(rowSums(rec.tpnCount0)+1), xlim = c(0, gEn.max), ylim = c(0, max(log10(rowSums(rec.tpnCount0)+1))), xlab = "Generation", ylab = "Total transposon copy number [log10(y+1)]", main = paste0("Total transposon copy number [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
 plot(x = seq_len(gEn)-1, y = rowSums(rec.tpnCount0) / hPop, xlim = c(0, gEn.max), ylim = c(0, max(rowSums(rec.tpnCount0)) / hPop), xlab = "Generation", ylab = "Average transposon copy number", main = paste0("Average transposon copy number [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))

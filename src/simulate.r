@@ -8,7 +8,7 @@
 # date: 20260623, 20261006
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "186625")} # 208225 vs 211681; no recombination jump 189253 copy 189220 both 189217; highest everything haploid 186625
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "189253")} # 208225 vs 211681; no recombination jump 189253 copy 189220 both 189217; highest everything haploid 186625
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -33,6 +33,7 @@ tPn = data.frame(ini = strsplit(tPn.io(tPn.0), ";")[[1]], uniqID = tPn.0$uniqID)
 
 ##### Initiate record dataframes #####
 rec.host = rec.transposon = rec.offspring = rec.gRecom = rec.tpnCount = matrix(NA, nrow = gEn.max + 1, ncol = hPop <- xIn("host organism constant population size"))
+rec.Fitness = cbind(rec.host,rec.host); rec.Fitness[1,] = 1/(hPop*2)
 sim.df.col = c("familyTree", "hARecomRate", "transposon", "tpnFail", "host")
 sim.df = as.data.frame(matrix("", nrow = hPop, ncol = length(sim.df.col)))
 colnames(sim.df) = sim.df.col
@@ -60,6 +61,7 @@ rm(ini.tPn)
 ##### Wright-Fisher / Neutral model run #####
 gEn = 0; t.ori = Sys.time()
 repeat{
+  if(any(sim.df$transposon=="")){stop("Transposon error")}
   eTa(t.ori, gEn + 1, gEn.max + 1, paste("run simulation",argv[3],"-",argv[5]))
   # Population dynamics snapshot
   rec.host[gEn + 1,] = sim.df$host
@@ -67,7 +69,7 @@ repeat{
   rec.offspring[gEn + 1,] = sim.df$familyTree
   rec.gRecom[gEn + 1,] = sim.df$hARecomRate
   rec.tpnCount[gEn + 1,] = lengths(strsplit(sim.df$transposon, ";"))
-  save(hOst, rec.host, rec.transposon, rec.offspring, rec.gRecom, rec.tpnCount, sim.df, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
+  save(hOst, rec.host, rec.transposon, rec.offspring, rec.gRecom, rec.tpnCount, rec.Fitness, sim.df, file = paste0("../data/tPn--", argv[3], "_", argv[5], ".rda"), compress = "xz")
   cat(" Analyzing;")
   gEn = gEn + 1; if(gEn > 1){source("sim_summary.r")}
 
@@ -99,6 +101,7 @@ repeat{
     s0.fit = rbind(s0.fit, s0.fit.0)
     s0.fit = s0.fit[order(s0.fit$host),]
   }
+  s0.fit$fitness = s0.fit$fitness * as.numeric(sim.df$tpnFail == "")
   if(sum(s0.fit$fitness)==0){ eLim = -2; break }
 
   # 4 Chromosome segregation
@@ -108,24 +111,21 @@ repeat{
   s0.tpnSeg = merge(s0.tpnSeg, s0.fit, all = T)
   s0.tpnSeg = s0.tpnSeg[order(s0.tpnSeg$chromosome, s0.tpnSeg$host),]
   s0.tpnSeg$tpn[is.na(s0.tpnSeg$tpn)] = ""
-  s0.fit$chromosome = s0.tpnSeg$fitness = NULL
-
   s0.tpnSeg$tpn = tPn.flat(s0.tpnSeg$tpn, ori = 1)
-  s0.fit$host = s0.tpnSeg$host = seq_len(nrow(s0.fit))
 
   # 5 Repopulate
-  fTree = matrix(rep(sample(s0.fit$host, hPop * ifelse(host.0$cell=="haploid", 1, 2), replace = T, prob = s0.fit$fitness/sum(s0.fit$fitness)), ifelse(host.0$cell=="haploid", 2, 1)), ncol = 2)
+  rec.Fitness[gEn + 1,] = s0.tpnSeg$fitness/sum(s0.tpnSeg$fitness)
+  fTree = as.data.frame(matrix(rep(sample(s0.tpnSeg$host, hPop * ifelse(host.0$cell=="haploid", 1, 2), replace = T, prob = as.numeric(rec.Fitness[gEn + 1,])), ifelse(host.0$cell=="haploid", 2, 1)), ncol = 2))
+  fTree$V1.tpn = s0.tpnSeg$tpn[fTree$V1]
+  fTree$V2.tpn = tPn.flat(s0.tpnSeg$tpn[fTree$V2], ori = 0)
+  fTree$har = h1.mod((sim.df$hARecomRate[fTree$V1] + sim.df$hARecomRate[fTree$V2]) / 2, host.0$hAReomH1)
 
-  # 6 Clean record dataframe
-  s0 = sim.df
-  for(i in seq_len(ncol(sim.df))){ sim.df[,i] = "" }
-
-  # 7 Inherit appropriate parameters
+  # 6 Inherit appropriate parameters
   sim.df$familyTree = paste(fTree[,1], fTree[,2], sep = ";")
-  sim.df$hARecomRate = h1.mod(rowMeans(matrix(s0$hARecomRate[match(fTree - (fTree > hPop) * hPop, as.numeric(row.names(s0)))], ncol = 2)), host.0$hAReomH1)
-  tpns = matrix(s0.tpnSeg$tpn[match(fTree, s0.tpnSeg$host)], ncol = 2)
-  tpns[,2] = tPn.flat(tpns[,2], ori = 0)
-  sim.df$transposon = apply(tpns, 1, FUN = function(x){return(paste(x[nzchar(x)], collapse = ";"))})
+  sim.df$transposon = paste(fTree[,3], fTree[,4], sep = ";")
+  sim.df$transposon[sim.df$transposon == ";"] = ""
+  sim.df$hARecomRate = fTree$har
+  sim.df[,4:5] = ""
 
   ##### Transposon activating stage #####
   cat(" Transposons;")
@@ -177,6 +177,13 @@ repeat{
   ## 4.2 Potentially-modified parameter incorporation
   s0.tpn$tpnEvo = strsplit(tPn.io(s0.tpn[,which(colnames(s0.tpn)==colnames(tPn.0)[1]):which(colnames(s0.tpn)==colnames(tPn.0)[ncol(tPn.0)])]), ";")[[1]]
 
+  ## 4.3 Identify lethal double strand breaks (prokaryotes only)
+  if(host.0$cell == "haploid"){
+    tFail = s0.tpn[which(!is.na(s0.tpn$mv)),]
+    tFail = unique(tFail$host[which(row.names(tFail) %in% tFail$mvSub)])
+    sim.df$tpnFail[tFail] = sub("^;","",paste(sim.df$tpnFail[tFail],"@",sep = ";"))
+  }
+
   # 5 Transposons migration
   i.mv = which(!is.na(s0.tpn$mv))
   i.cp = which(!is.na(s0.tpn$cp))
@@ -184,8 +191,7 @@ repeat{
   ## 5.1 mv
   if(length(i.mv) > 0){
     s0.final = s0.tpn[-i.mv, 1:3]
-    s0.sub = as.numeric(s0.tpn$mvSub[i.mv[s0.tpn$mvhAR[i.mv] & !is.na(s0.tpn$mvSub[i.mv])]]) # jump tpn replacements
-    s0.sub = s0.tpn[s0.sub,1:3]
+    s0.sub = s0.tpn[as.numeric(s0.tpn$mvSub[i.mv[s0.tpn$mvhAR[i.mv] & !is.na(s0.tpn$mvSub[i.mv])]]),1:3] # jump tpn replacements
     s0.sub$tpn = paste0(substr(s0.sub$tpn,1,1), (as.numeric(substr(s0.sub$tpn,2,2)) + 1) %% 2, substr(s0.sub$tpn,3,nchar(s0.sub$tpn))) # chromosome location change
     tpns = s0.tpn[i.mv,1:3]
     tpns$tpn = s0.tpn$tpnEvo[i.mv]
@@ -231,27 +237,32 @@ repeat{
   ##### Gene recombination stage (assume no transposons excise / add complications) #####
   cat(" Recombination\n")
   # 1 Check if there is recombination happening
-  reCom = TRUE
-  reCom.df = as.data.frame(matrix(0, nrow = hPop, ncol = length(rG)))
-  colnames(reCom.df) = rG
-  for(i in seq_len(length(rG))){reCom.df[,i] = as.numeric(grepl(paste0("g0", colnames(reCom.df)[i]), sim.df$transposon, fixed = TRUE)) + as.numeric(grepl(paste0("g1", colnames(reCom.df)[i]), sim.df$transposon, fixed = TRUE))};rm(i)
+  reCom = host.0$recom > 0
+  if(reCom){
+    reCom.df = as.data.frame(matrix(0, nrow = hPop, ncol = length(rG)))
+    colnames(reCom.df) = rG
+    for(i in seq_len(length(rG))){
+      i0 = table(s0.final$host[grep(paste0(rG[i],"!"), s0.final$tpn)]) # disruption occur when transposon inserted onto the gene / intergenic region in front
+      if(length(i0) > 0){ reCom.df[as.numeric(names(i0)),i] = i0 }
+    };rm(i,i0)
 
   # 2 Number of genes going to be recombined
-  gRecRate = host.0$recom * nrow(geneIn$gene) / 5000 # [202610231012] So 1/1000 genes undergo recombination at the highest rates; this is the product of the proportion of the population undergoing recombination, and the probability of a gene being affected by a recombination in such an isolate; this probability is the product of the number of recombinations, and the length of the recombinations (e.g. ~1% of pneumococci undergo transformation in culture; ~10% of a particular locus undergo recombination; if we estimate a mean length of 5kb, this implies ~40 recombinations per individual); so if you work out how many genes are affected by each recombination on average, you can scale this up such that an individual locus has a maximal recombination rate of ~0.001
-  numGenes = lengths(strsplit(sim.df$transposon, ";"))
-  nG.no = which(numGenes==0)
-  numGenes = data.frame(tpn = tPn.io(paste(sim.df$transposon, collapse = ";"))$size, host = rep(seq_len(hPop), numGenes))
-  numGenes = aggregate(tpn ~ host, data = numGenes, FUN = sum)
-  if(length(nG.no)>0){
-    nG.no = as.data.frame(matrix(c(nG.no, rep(0, length(nG.no))), ncol = 2))
-    colnames(nG.no) = colnames(numGenes)
-    numGenes = rbind(numGenes, nG.no)
-    numGenes = numGenes[order(numGenes$host),]
+    gRecRate = host.0$recom * nrow(geneIn$gene) / 5000 # [202610231012] So 1/1000 genes undergo recombination at the highest rates; this is the product of the proportion of the population undergoing recombination, and the probability of a gene being affected by a recombination in such an isolate; this probability is the product of the number of recombinations, and the length of the recombinations (e.g. ~1% of pneumococci undergo transformation in culture; ~10% of a particular locus undergo recombination; if we estimate a mean length of 5kb, this implies ~40 recombinations per individual); so if you work out how many genes are affected by each recombination on average, you can scale this up such that an individual locus has a maximal recombination rate of ~0.001
+
+  ## Genome size increase due to transposons
+    numGenes = aggregate(size ~ host, data = s0.final, FUN = sum)
+    if(nrow(numGenes) < hPop){
+      i = which(!(seq_len(hPop) %in% s0.final$host))
+      numGenes = rbind(numGenes, as.data.frame(matrix(c(i, rep(0, length(i))), ncol = 2)))
+      numGenes = numGenes[order(numGenes[,1]),]
+    }
+
+  ## 2.2 Number of recombined genes
+    numGenes = gRecRate * (mean(geneIn$gene$length) * (1 + numGenes[,2] / geneIn$genome[2] * (host.0$recomH1!="switch")) * as.numeric(!(apply(reCom.df, 1, max) == 2)))
+    for(i in seq_len(hPop)){numGenes[i] = rpois(1, lambda = numGenes[i])}
+    numGenes = pmin(numGenes, nrow(geneIn$gene))
+    if(all(apply(reCom.df, 1, max) == 2) | all(numGenes==0)){reCom = FALSE}
   }
-  numGenes = gRecRate * (mean(geneIn$gene$length) * (1 + numGenes$tpn / geneIn$genome[2] * (host.0$recomH1!="switch")) * as.numeric(!(apply(reCom.df, 1, max) == 2)))
-  for(i in seq_len(hPop)){numGenes[i] = rpois(1, lambda = numGenes[i])}
-  numGenes = pmin(numGenes, nrow(geneIn$gene))
-  if(all(apply(reCom.df, 1, max) == 2) | gRecRate==0 | all(numGenes==0)){reCom = FALSE}
 
   if(reCom){
   # 3 Hotspots selection

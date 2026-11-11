@@ -62,3 +62,10 @@ fAmily = function(tree.df, state = "haploid"){
     as.data.frame(out/dim(par)[1])
   }
 }
+
+##### Get mode ##### https://www.geeksforgeeks.org/r-language/mean-median-and-mode-in-r-programming/
+get_mode <- function(v) {
+  uniqv <- unique(v)
+  uK = tabulate(match(v, uniqv))
+  return(c(uniqv[which.max(uK)], max(uK)))
+}

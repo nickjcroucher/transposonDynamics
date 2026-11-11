@@ -1,3 +1,5 @@
 bash sangerHPC.sh
 bash ana_sanger.sh
 bash 20260825_cpDy--run.sh
+
+for i2 in 0 .1; do for i1 in 0 .1; do for i0 in 0 .1; do echo -e "Jump: ${i0}; Copy: ${i1}; Recom: ${i2}"; Rscript getScenario.r ${i0} ${i1} ${i2} | tail -n 1;done;done;done
