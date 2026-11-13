@@ -1,19 +1,23 @@
 #!/bin/env Rscript
 # author: ph-u (test suite drafted with Claude)
 # script: test_simulation.r
-# desc: unit, input-data and end-to-end tests for func.r, func_analysis.r, simulate.r and sim_summary.r
-# in: Rscript test_simulation.r                      (run from the folder that holds func.r)
+# desc: end-to-end checks of simulate.r with the test parameter file raw/input-test.csv
+# in: Rscript test_simulation.r                      (run from the folder that holds simulate.r)
 #     or, inside R: testthat::test_file("test_simulation.r")
 # out: test report on screen; Rscript exits with status 1 if any test fails or errors
 # arg: none; optional environment switch:
-#      TPN_SKIP_INTEGRATION=true   skip the end-to-end simulate.r runs (the slow part: 20 short runs)
-# date: 20261027, 20261106
+#      TPN_SKIP_INTEGRATION=true   skip the simulate.r runs (nothing is tested then)
+# date: 20261113
 #
-# Needs internet access: func.r and func_analysis.r source helper scripts (eta.r, colour.r) from GitHub.
-# Input file: simulate.r's default input when it exists, otherwise the committed ../raw/input.csv
-# (data/ is git-ignored, so CI uses the raw/ copy). Templates always come from ../raw, as func.r reads them.
-# The suite only READS the project folders. Everything that writes (mock genomes, simulate.r and sim_summary.r
-# outputs) happens in throwaway copies of the project under tempdir(), which R deletes when the session ends.
+# GitHub Actions must run this with R 4.5.0 (set r-version: '4.5.0' in the workflow; checked in section 1).
+# data/ is git-ignored, so the script generates the files simulate.r needs there:
+#   data/gFitness.csv         written from the table in section 3 and checked against the original's MD5
+#   data/GCA_000014365.gff    NCBI GenBank annotation of S. pneumoniae D39 (GCA_000014365.2, ASM1436v2),
+#                             downloaded from the NCBI FTP site (or copied from ../data if it is already there)
+#   data/rerun.csv            the runs to test: one 'seed index,scenario number' pair per line, no header
+# The numbers in the tests are scenario numbers (simulate.r argument 5), each run with seed index 1 (argument 3).
+# Everything runs in a throwaway copy of the project under tempdir(), so a local data/ folder is never touched.
+# Needs internet access: the GFF download, and the helper scripts that func.r and func_analysis.r source from GitHub.
 
 ##### 0. `Rscript test_simulation.r` re-runs this file under testthat #####
 if (!identical(Sys.getenv("TESTTHAT"), "true")) {
@@ -37,1214 +41,432 @@ if (!requireNamespace("withr", quietly = TRUE)) stop("Please install the 'withr'
 code_dir <- normalizePath(getwd())
 scripts <- c("func.r", "func_analysis.r", "simulate.r", "sim_summary.r")
 if (!all(file.exists(file.path(code_dir, scripts)))) {
-  stop("test_simulation.r must sit next to ", paste(scripts, collapse = ", "), " (folder: ", code_dir, ")",
-       call. = FALSE)
+  stop("test_simulation.r must sit next to ", paste(scripts, collapse = ", "), " (folder: ", code_dir, ")", call. = FALSE)
+}
+raw_dir <- normalizePath(file.path(code_dir, "..", "raw"), mustWork = FALSE)
+missing_raw <- setdiff(c("input-test.csv", "seed.csv", "scenario.csv"), list.files(raw_dir))
+if (length(missing_raw) > 0) stop("missing in ../raw: ", paste(missing_raw, collapse = ", "), call. = FALSE)
+
+message("Running under ", R.version.string)
+if (identical(Sys.getenv("GITHUB_ACTIONS"), "true") && getRversion() != "4.5.0") {
+  stop("GitHub Actions must run these tests with R 4.5.0, found ", getRversion(),
+       ": set r-version: '4.5.0' in the workflow", call. = FALSE)
 }
 SKIP_INTEGRATION <- tolower(Sys.getenv("TPN_SKIP_INTEGRATION")) %in% c("true", "1", "yes")
 skip_integration <- function() skip_if(SKIP_INTEGRATION, "TPN_SKIP_INTEGRATION is set")
 
-# simulate.r's built-in defaults: input file, seed file, seed index, scenario file, scenario index
-sim_defaults <- local({
-  src <- readLines(file.path(code_dir, "simulate.r"), warn = FALSE)
-  ln <- grep("argv\\s*=\\s*c\\(", src, value = TRUE)
-  if (length(ln) == 0) NULL else gsub("\"", "", regmatches(ln[1], gregexpr("\"[^\"]*\"", ln[1]))[[1]])
-})
-if (length(sim_defaults) < 5) stop("could not read the default arguments on simulate.r's argv line", call. = FALSE)
-from_code <- function(p) normalizePath(file.path(code_dir, p), mustWork = FALSE)
-f_input <- from_code(sim_defaults[1])                                 # simulate.r's default input
-if (!file.exists(f_input)) f_input <- from_code("../raw/input.csv")   # data/ is git-ignored: use the committed copy
-f_seed <- from_code(sim_defaults[2])
-f_scen <- from_code(sim_defaults[4])
-raw_dir <- from_code("../raw")                                        # func.r always reads the templates from here
-data_dir <- from_code("../data")
+# Runs to test, in rerun.csv's format: seed index (row of seed.csv), scenario number (row of scenario.csv)
+RERUN <- data.frame(seed = 1L, scenario = c(189256L, 189253L, 189220L, 186664L))
 
-raw_files <- if (dir.exists(raw_dir)) list.files(raw_dir, full.names = TRUE) else character(0)
-f_tpn <- raw_files[grepl("-tpn\\.csv$", raw_files)]
-f_host <- raw_files[grepl("-host\\.csv$", raw_files)]
-if (!file.exists(f_input) || length(f_tpn) != 1 || length(f_host) != 1) {
-  stop("the tests need an input file (", sim_defaults[1], " or ../raw/input.csv) and exactly one *-tpn.csv and ",
-       "one *-host.csv in ../raw (found ", length(f_tpn), " and ", length(f_host), ")", call. = FALSE)
+GFITNESS_MD5 <- "78997b2adeeb616aa630c52bee023a40"     # MD5 of the original data/gFitness.csv
+GFF_NAME <- "GCA_000014365.gff"
+GFF_URL <- paste0("https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/014/365/GCA_000014365.2_ASM1436v2/",
+                  "GCA_000014365.2_ASM1436v2_genomic.gff.gz")
+# What gIn() reads from the GFF: genome length (first region row) and the locus_tag/start/end table
+GFF_EXPECT <- c(genome = 2046116, rows = 2068, starts = 2157737968, ends = 2159525968)
+
+cache <- new.env()
+
+##### 2. Throwaway project copy with the generated data/ files #####
+write_lf <- function(lines, path) {      # LF line endings on every platform
+  con <- file(path, open = "wb")
+  on.exit(close(con))
+  writeLines(lines, con, sep = "\n")
 }
-tpn_tmpl <- utils::read.csv(f_tpn, header = TRUE, na.strings = "")     # read as func.r reads it
-host_tmpl <- utils::read.csv(f_host, header = TRUE)
 
-cache <- new.env()                       # results computed once, on first use
-real_scenarios <- function() {
-  if (is.null(cache$scen)) {
-    cache$scen <- utils::read.csv(f_scen, header = TRUE, colClasses = c("character", "integer"), na.strings = "")
+write_gfitness <- function(path) {
+  tok <- scan(text = GFITNESS_TABLE, what = "", quiet = TRUE)
+  if (length(tok) != 1911) stop("the embedded gene fitness table should have 1911 rows, found ", length(tok), call. = FALSE)
+  write_lf(c("locus_tag,fitness", paste0("SPD_", tok)), path)
+  if (!identical(unname(tools::md5sum(path)), GFITNESS_MD5)) {
+    stop("data/gFitness.csv was not reproduced exactly (MD5 differs)", call. = FALSE)
   }
-  cache$scen
 }
 
-##### 2. Throwaway project copies with mock genomes #####
-# Gene coordinates from gene lengths and the gap before each gene (a negative gap is an overlap).
-# Genes are long (20 kb) so two independent insertions rarely hit the same base by chance.
-mock_genome <- function(n, len = 20000, gap = 4000, lead = 5000, trail = 9000, tiny = integer(0), tiny_len = 30,
-                        tiny_gap = 10, overlap_at = integer(0), overlap = 4, adjacent_at = integer(0)) {
-  lens <- rep(len, n)
-  gaps <- rep(gap, n)
-  lens[tiny] <- tiny_len
-  gaps[tiny] <- tiny_gap
-  gaps[1] <- lead
-  gaps[adjacent_at] <- 0
-  gaps[overlap_at] <- -overlap
-  starts <- ends <- numeric(n)
-  pos <- 0
-  for (i in seq_len(n)) {
-    starts[i] <- pos + gaps[i] + 1
-    ends[i] <- starts[i] + lens[i] - 1
-    pos <- ends[i]
-  }
-  list(n = n, tags = sprintf("MOCK_%04d", seq_len(n)), starts = starts, ends = ends, G = pos + trail)
+gff_fingerprint <- function(path) {
+  x <- readLines(path, warn = FALSE)
+  x <- x[nzchar(x) & !startsWith(x, "#")]
+  f <- strsplit(x, "\t", fixed = TRUE)
+  col <- function(k) vapply(f, function(v) if (length(v) >= k) v[k] else NA_character_, character(1))
+  type <- col(3)
+  start <- as.numeric(col(4))
+  end <- as.numeric(col(5))
+  att <- col(9)
+  tag <- ifelse(grepl("(^|;)locus_tag=", att), sub(".*(^|;)locus_tag=([^;]+).*", "\\2", att), NA_character_)
+  keep <- type != "region" & !is.na(tag)
+  u <- unique(data.frame(tag = tag[keep], start = start[keep], end = end[keep]))
+  c(genome = end[which(type == "region")[1]], rows = nrow(u), starts = sum(u$start), ends = sum(u$end))
 }
 
-# GFF with a chromosome region, an untagged repeat_region, gene + CDS lines, and a second (plasmid) region
-write_gff <- function(path, g) {
-  s <- as.integer(g$starts)
-  e <- as.integer(g$ends)
-  gene <- sprintf("mockchr\tmock\tgene\t%d\t%d\t.\t+\t.\tID=gene-%s;Name=%s;gbkey=Gene;locus_tag=%s",
-                  s, e, g$tags, g$tags, g$tags)
-  cds <- sprintf(paste0("mockchr\tmock\tCDS\t%d\t%d\t.\t+\t0\tID=cds-%s;Parent=gene-%s;gbkey=CDS;",
-                        "locus_tag=%s;product=mock protein %d"),
-                 s, e, g$tags, g$tags, g$tags, seq_len(g$n))
-  region <- sprintf(paste0("mockchr\tmock\tregion\t1\t%d\t.\t+\t.\tID=mockchr:1..%d;Dbxref=taxon:0;",
-                           "gbkey=Src;mol_type=genomic DNA"),
-                    as.integer(g$G), as.integer(g$G))
-  rpt <- sprintf("mockchr\tmock\trepeat_region\t%d\t%d\t.\t+\t.\tID=id-rpt1;rpt_type=direct", s[1], s[1] + 99L)
-  plasmid <- "mockplasmid\tmock\tregion\t1\t5000\t.\t+\t.\tID=mockplasmid:1..5000;gbkey=Src;mol_type=genomic DNA"
-  writeLines(c("##gff-version 3", sprintf("##sequence-region mockchr 1 %d", as.integer(g$G)), region, rpt,
-               as.vector(rbind(gene, cds)), plasmid), path)
-}
-
-build_sandbox <- function(name, genome, fitness, params, scenarios) {
-  root <- file.path(tempdir(), "tpn_tests", name)
-  unlink(root, recursive = TRUE)
-  sb <- list(root = root, code = file.path(root, "code"), raw = file.path(root, "raw"),
-             data = file.path(root, "data"))
-  for (d in c(sb$code, sb$raw, sb$data)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
-  copied <- c(file.copy(file.path(code_dir, scripts), sb$code, overwrite = TRUE),
-              file.copy(c(f_tpn, f_host), sb$raw, overwrite = TRUE))
-  if (!all(copied)) stop("could not copy the project into ", root)
-  if (file.exists(f_seed)) {
-    file.copy(f_seed, file.path(sb$raw, "seed.csv"), overwrite = TRUE)
+get_gff <- function(path) {
+  local_copy <- file.path(code_dir, "..", "data", GFF_NAME)
+  if (file.exists(local_copy)) {
+    file.copy(local_copy, path, overwrite = TRUE)
   } else {
-    writeLines(c("12345", "67890"), file.path(sb$raw, "seed.csv"))
-  }
-  pms <- utils::read.csv(f_input, header = TRUE)
-  for (key in names(params)) {
-    if (!key %in% pms$Type) {
-      extra <- pms[1, , drop = FALSE]
-      extra[1, ] <- ""
-      extra$Type <- key
-      pms <- rbind(pms, extra)
+    gz <- tempfile(fileext = ".gff.gz")
+    old <- options(timeout = max(600, getOption("timeout")))
+    on.exit(options(old), add = TRUE)
+    ok <- FALSE
+    for (attempt in 1:3) {
+      ok <- tryCatch(utils::download.file(GFF_URL, gz, mode = "wb", quiet = TRUE) == 0, error = function(e) FALSE)
+      if (ok) break
+      Sys.sleep(5 * attempt)
     }
-    pms$Value[pms$Type == key] <- as.character(params[[key]])
+    if (!ok) stop("could not download ", GFF_URL, call. = FALSE)
+    write_lf(readLines(gzfile(gz), warn = FALSE), path)
   }
-  utils::write.csv(pms, file.path(sb$raw, "input.csv"), row.names = FALSE)
-  utils::write.csv(scenarios, file.path(sb$raw, "scenario.csv"), row.names = FALSE)
-  write_gff(file.path(sb$data, "mock_genome.gff"), genome)
-  utils::write.csv(data.frame(locus_tag = fitness$tag, fitness = fitness$value),
-                   file.path(sb$data, "mock_fitness.csv"), row.names = FALSE)
-  sb
+  fp <- gff_fingerprint(path)
+  if (!isTRUE(all.equal(fp, GFF_EXPECT))) {
+    stop("the GFF does not match the annotation the tests expect (", paste(names(fp), fp, sep = " = ", collapse = ", "), ")",
+         call. = FALSE)
+  }
 }
 
-# Main mock genome: 40 genes with a lead and tail gap, a 4-bp overlap (genes 10/11), back-to-back genes (20/21)
-# and five 30-bp genes (25-29).
-mock_main <- mock_genome(40, tiny = 25:29, overlap_at = 11, adjacent_at = 21)
-REC_MAIN <- mock_main$tags[c(25, 26)]     # tiny, so random transposons rarely hit them
-fit_main <- local({
-  keep <- !seq_len(mock_main$n) %in% c(27, 28)   # left out on purpose: gIn() must give them fitness 0
-  list(tag = mock_main$tags[keep],
-       value = rep(c(1, 0.9, 0.8, 0.7, 0.6, 0.5), length.out = mock_main$n)[keep])
-})
-GMAX <- 5
-HPOP <- 30
-base_params <- list(
-  "ref genome" = "mock_genome",
-  "gene fitness" = "../data/mock_fitness.csv",
-  "genes for recombination mechanism" = paste(REC_MAIN, collapse = ";"),
-  "host organism constant generation number" = GMAX,
-  "host organism constant population size" = HPOP,
-  "transposon population size per genome mean" = 8,
-  "full result" = "yes"
-)
-sb_main <- build_sandbox("main", mock_main, fit_main, base_params,
-                         data.frame(transposon = tpn_tmpl$uniqID[1], host = 1L))
-SB_ARGV <- c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "1")
+# Run simulate.r in the global environment of a fresh R process, then keep the variables the tests inspect
+CAPTURE <- c(
+  "# written by test_simulation.r",
+  "args <- commandArgs(trailingOnly = TRUE)   # simulate.r reads arguments 1-5; argument 6 is the output file",
+  "source('simulate.r')",
+  "state <- list(transposon = sim.df$transposon,",
+  "              i.mv = if (exists('i.mv', inherits = FALSE)) length(i.mv) else NA_integer_,",
+  "              i.cp = if (exists('i.cp', inherits = FALSE)) length(i.cp) else NA_integer_,",
+  "              reCom = if (exists('reCom', inherits = FALSE)) reCom else NA,",
+  "              eLim = eLim, gEn = gEn, r = as.character(getRversion()))",
+  "saveRDS(state, args[6])")
 
-fenv <- new.env()                          # func.r, sourced inside the main copy; it reads argv on load
-assign("argv", SB_ARGV, envir = fenv)
-withr::with_dir(sb_main$code, sys.source("func.r", envir = fenv, keep.source = FALSE))
-aenv <- new.env()                          # func_analysis.r; its colour.r lands in the global environment
-sys.source(file.path(code_dir, "func_analysis.r"), envir = aenv, keep.source = FALSE)
-tpl <- fenv$tPn.0                          # transposon template exactly as func.r reads it
-
-##### 3. Helpers for the unit tests #####
-mk_tpn <- function(gene, location, size = 1000, generation = 0, copyDir = "both") {
-  r <- tpl[1, ]
-  r$gene <- gene
-  r$location <- location
-  r$size <- size
-  r$generation <- generation
-  r$copyDir <- copyDir
-  r$valid <- TRUE
-  fenv$tPn.io(r)
-}
-# Toy gene table laid out [inter 10][gene 20] [inter 5][gene 20] [inter 5][gene 20] = positions 1-30, 31-55, 56-80
-toy_gdf <- data.frame(locus_tag = c("0T_0001", "0T_0002", "0T_0003"), start = c(11, 36, 61), end = c(30, 55, 80),
-                      length = c(20, 20, 20), interLength = c(10, 5, 5), fitness = 1, recombination = NA)
-# Two-copy toy table on a 100-bp circle; gene 1's gap (30) = 10 bases before it + 20 after gene 3
-cl_gdf <- data.frame(locus_tag = c(paste0("0T_000", 1:3), paste0("1T_000", 1:3)), start = rep(c(11, 36, 61), 2),
-                     end = rep(c(30, 55, 80), 2), length = 20, interLength = rep(c(30, 5, 5), 2),
-                     fitness = 1, recombination = NA)
-# Five genes per copy: 1 kb apart, then 48 kb and ~1 Mb away
-hot <- data.frame(locus_tag = c(sprintf("0H_%04d", 1:5), sprintf("1H_%04d", 1:5)),
-                  start = rep(c(1, 1001, 2001, 50001, 1e6), 2))
-letters_of <- function(x) unique(strsplit(paste(x, collapse = ""), "")[[1]])
-gin_main <- function(seed = 1) withr::with_dir(sb_main$code, withr::with_seed(seed, fenv$gIn()))
-
-##### 4. Unit tests: func.r #####
-test_that("xIn() returns numbers for numeric values and text otherwise", {
-  ref <- data.frame(Type = c("a", "b", "c", "d"), Value = c("10", "x;y", "1e-3", " 7 "))
-  expect_identical(fenv$xIn("a", ref), 10)
-  expect_identical(fenv$xIn("b", ref), "x;y")
-  expect_equal(fenv$xIn("c", ref), 0.001)
-  expect_identical(fenv$xIn("d", ref), 7)
-})
-
-test_that("xIn() reads the input file named in argv[1] and stops on unknown names", {
-  expect_identical(fenv$xIn("host organism constant population size"), HPOP)
-  expect_identical(fenv$xIn("ref genome"), "mock_genome")
-  expect_error(fenv$xIn("no such parameter"))
-})
-
-test_that("gffClean() reads the one GFF named after 'ref genome' and splits attributes into columns", {
-  withr::local_dir(sb_main$code)
-  g <- fenv$gffClean()
-  expect_identical(names(g)[1:8], c("seqname", "source", "type", "start", "end", "score", "strand", "phase"))
-  expect_true(all(c("ID", "Name", "gbkey", "locus_tag", "Parent", "product", "rpt_type") %in% names(g)))
-  expect_equal(nrow(g), 3 + 2 * mock_main$n)          # 2 regions + 1 repeat + gene and CDS lines; '#' lines skipped
-  expect_equal(sum(is.na(g$locus_tag)), 3)
-  expect_identical(g$locus_tag[g$type == "gene"], mock_main$tags)
-  expect_equal(g$start[g$type == "gene"], mock_main$starts)
-  expect_identical(g$product[g$type == "CDS"][2], "mock protein 2")
-})
-
-test_that("gffClean() matches the GFF on the part of 'ref genome' before its first dot", {
-  withr::local_dir(sb_main$code)
-  orig <- fenv$pMs
-  withr::defer(assign("pMs", orig, envir = fenv))
-  p <- orig
-  p$Value[p$Type == "ref genome"] <- "mock_genome.7"      # a versioned accession still finds mock_genome.gff
-  assign("pMs", p, envir = fenv)
-  g <- fenv$gffClean()
-  expect_identical(g$locus_tag[g$type == "gene"], mock_main$tags)
-})
-
-test_that("gffClean() stops unless exactly one GFF matches 'ref genome'", {
-  expect_error(fenv$gffClean(fLst = "../raw/seed.csv"), "expected one GFF")
-  expect_error(fenv$gffClean(fLst = c("../data/mock_genome.gff", "../data/old_mock_genome.gff")), "expected one GFF")
-})
-
-test_that("gIn() builds the two-copy gene table, fitness and recombination flags", {
-  gi <- gin_main()
-  g <- mock_main
-  n <- g$n
-  expect_named(gi, c("gene", "transposon.titre", "numGene", "genome"))
-  expect_equal(gi$numGene, n)                           # untagged repeat and both region rows dropped
-  expect_equal(gi$genome, c(1, g$G))                    # first region (chromosome), not the plasmid
-  expect_false(anyNA(gi$gene$locus_tag))
-  expect_identical(gi$gene$locus_tag, c(paste0("0", g$tags), paste0("1", g$tags)))
-  fit <- fit_main$value[match(g$tags, fit_main$tag)]
-  fit[is.na(fit)] <- 0                                  # genes missing from the file count as essential
-  expect_equal(gi$gene$fitness, c(fit, fit))
-  rec <- g$tags %in% REC_MAIN
-  expect_equal(gi$gene$recombination, c(ifelse(rec, 0, NA), ifelse(rec, 1, NA)))
-  expect_length(gi$transposon.titre, HPOP)
-  expect_true(all(gi$transposon.titre >= 1 & gi$transposon.titre == round(gi$transposon.titre)))
-  expect_identical(gi, gin_main())                     # same seed, same result
-})
-
-test_that("gIn() lengths and gaps cover the whole circular chromosome", {
-  gi <- gin_main()
-  g <- mock_main
-  n <- g$n
-  c0 <- gi$gene[seq_len(n), ]
-  len <- g$ends - g$starts + 1
-  gap <- c((g$G - g$ends[n]) + (g$starts[1] - 1), g$starts[-1] - g$ends[-n] - 1)
-  ov <- which(gap < 0)                                  # overlap: trimmed off the earlier gene, gap 0
-  len[ov - 1] <- len[ov - 1] + gap[ov]
-  gap[ov] <- 0
-  expect_equal(c0$length, len)
-  expect_equal(c0$interLength, gap)
-  expect_equal(c0$interLength[c(11, 21)], c(0, 0))      # overlapping and back-to-back genes
-  expect_equal(c0$length[10], g$ends[10] - g$starts[10] + 1 - 4)
-  expect_equal(sum(c0$length + c0$interLength), g$G)
-  expect_true(all(gi$gene$interLength >= 0))
-  expect_equal(gi$gene$length[n + seq_len(n)], c0$length)
-})
-
-test_that("ini.host() returns host.var genomes of nGenes alleles from the allowed alphabet", {
-  h <- withr::with_seed(2, fenv$ini.host(nGenes = 12, host.var = 5, gene.var = 3))
-  expect_type(h, "character")
-  expect_length(h, 5)
-  expect_true(all(nchar(h) == 12))
-  expect_true(all(letters_of(h) %in% c("A", "B", "C", "a", "b", "c")))
-  expect_identical(h, withr::with_seed(2, fenv$ini.host(12, 5, 3)))
-  expect_length(withr::with_seed(2, fenv$ini.host(3, 1, 2)), 1)
-})
-
-test_that("ini.host() clamps variation to 1-26 per gene (2 to 52 alleles)", {
-  expect_true(all(letters_of(withr::with_seed(3, fenv$ini.host(50, 4, 0))) %in% c("A", "a")))
-  many <- letters_of(withr::with_seed(3, fenv$ini.host(500, 4, 100)))
-  expect_true(all(many %in% c(LETTERS, letters)))
-  expect_gt(length(many), 26)
-})
-
-test_that("ini.host() takes per-gene variation written as 'a;b;...' and recycles it over the genes", {
-  h <- withr::with_seed(4, fenv$ini.host(nGenes = 4, host.var = 200, gene.var = "1;2"))
-  expect_true(all(substr(h, 1, 1) %in% c("A", "a")))
-  expect_true(all(substr(h, 2, 2) %in% c("A", "B", "a", "b")))
-  expect_true(all(substr(h, 3, 3) %in% c("A", "a")))
-  expect_true(all(substr(h, 4, 4) %in% c("A", "B", "a", "b")))
-  expect_true(any(substr(h, 2, 2) %in% c("B", "b")))
-})
-
-test_that("tPn.io() round-trips template rows between data frame and text", {
-  rows <- tpl[1:5, ]
-  s <- fenv$tPn.io(rows)
-  expect_type(s, "character")
-  expect_length(s, 1)
-  expect_length(strsplit(s, ";", fixed = TRUE)[[1]], 5)
-  expect_false(grepl(" ", s, fixed = TRUE))
-  back <- fenv$tPn.io(s)
-  expect_identical(names(back), names(tpl))
-  expect_equal(back, rows, ignore_attr = TRUE)
-})
-
-test_that("tPn.io() joins vectors with ';' and drops empty tokens", {
-  parts <- strsplit(fenv$tPn.io(tpl[1:3, ]), ";", fixed = TRUE)[[1]]
-  expect_equal(nrow(fenv$tPn.io(parts)), 3)
-  expect_equal(nrow(fenv$tPn.io(c(parts[1], "", parts[2]))), 2)
-})
-
-test_that("tPn.io() keeps rates to about 7 significant digits", {
-  r <- tpl[1, ]
-  r$jumpRate <- 1 / 3
-  r$copyRate <- 0.123456789
-  back <- fenv$tPn.io(fenv$tPn.io(r))
-  expect_equal(back$jumpRate, 1 / 3, tolerance = 1e-6)
-  expect_equal(back$copyRate, 0.123456789, tolerance = 1e-6)
-})
-
-test_that("reGeneDF() adds transposon sizes to the gene or intergenic length they sit in", {
-  expect_identical(fenv$reGeneDF("", toy_gdf), toy_gdf)
-  s <- paste(mk_tpn("g0T_0002", 3, size = 1000), mk_tpn("g0T_0002", 9, size = 500),
-             mk_tpn("i0T_0003", 2, size = 100), sep = ";")
-  want <- toy_gdf
-  want$length[2] <- 20 + 1500
-  want$interLength[3] <- 5 + 100
-  expect_equal(fenv$reGeneDF(s, toy_gdf), want)
-})
-
-test_that("tPn.reloc() returns one transposon string and a gene table grown by its size", {
-  t1 <- mk_tpn(NA, 0)
-  for (u in c(0.05, 0.3, 0.5, 0.74, 0.9, 0.99999)) {
-    r <- fenv$tPn.reloc(num = u, tpn = t1, gEn = 7, gDF = toy_gdf)
-    expect_named(r, c("tpn", "gDF"))
-    d <- fenv$tPn.io(r$tpn)
-    expect_equal(nrow(d), 1)
-    expect_equal(d$generation, 7)
-    expect_match(d$gene, "^[gi]0T_000[123]$")
-    expect_true(d$location >= 1)
-    expect_identical(names(r$gDF), names(toy_gdf))
-    expect_equal(sum(r$gDF$length + r$gDF$interLength), 80 + 1000)
-  }
-})
-
-test_that("tPn.reloc() places a position in the region that contains it, including row boundaries", {
-  t1 <- mk_tpn(NA, 0)
-  at <- function(p) {              # p = 1-based position on the toy table; ceiling(num * 80) == p
-    r <- fenv$tPn.reloc(num = (p - 0.5) / 80, tpn = t1, gDF = toy_gdf)
-    d <- fenv$tPn.io(r$tpn)
-    list(where = c(d$gene, d$location), gDF = r$gDF)
-  }
-  expect_identical(at(40)$where, c("g0T_0002", "5"))
-  expect_identical(at(33)$where, c("i0T_0002", "3"))
-  expect_identical(at(4)$where, c("i0T_0001", "4"))
-  expect_identical(at(70)$where, c("g0T_0003", "10"))
-  expect_identical(at(30)$where, c("g0T_0001", "20"))   # last base of row 1
-  expect_identical(at(31)$where, c("i0T_0002", "1"))    # first base of row 2
-  expect_identical(at(80)$where, c("g0T_0003", "20"))   # the very last position
-  expect_equal(at(40)$gDF$length[2], 20 + 1000)
-  expect_equal(at(33)$gDF$interLength[2], 5 + 1000)
-})
-
-test_that("tPn.newloc() relocates rows in order and carries each host's updated gene table", {
-  seen <- numeric(0)
-  stub <- function(num, tpn, gEn = 0, gDF) {
-    seen <<- c(seen, sum(gDF$length + gDF$interLength))
-    gDF$length[1] <- gDF$length[1] + 1000
-    list(tpn = paste0(tpn, "@", gEn), gDF = gDF)
-  }
-  orig <- fenv$tPn.reloc
-  assign("tPn.reloc", stub, envir = fenv)
-  withr::defer(assign("tPn.reloc", orig, envir = fenv))
-  df <- data.frame(tpn = c("a", "b", "c", "d"), loc = c(0.1, 0.2, 0.3, 0.4), host = c(1, 1, 2, 2), newLoc = NA)
-  out <- fenv$tPn.newloc(df, gen = 3, gDF = toy_gdf)
-  expect_identical(out$newLoc, c("a@3", "b@3", "c@3", "d@3"))
-  expect_equal(seen, c(80, 1080, 80, 1080))           # second row of a host sees the first insertion
-})
-
-test_that("tPn.x() invalidates an earlier transposon disrupted by a later insertion in the same region", {
-  a <- mk_tpn("g0T_0002", 10, size = 100)               # occupies 10..109
-  valid <- function(...) fenv$tPn.io(fenv$tPn.x(paste(..., sep = ";")))$valid
-  expect_identical(fenv$tPn.x(""), "")
-  expect_identical(valid(a), TRUE)
-  expect_identical(valid(a, mk_tpn("g0T_0002", 109, size = 50)), c(FALSE, TRUE))
-  expect_identical(valid(a, mk_tpn("g0T_0002", 110, size = 50)), c(TRUE, TRUE))
-  expect_identical(valid(a, mk_tpn("g0T_0003", 50, size = 50)), c(TRUE, TRUE))
-  expect_identical(valid(sub("!TRUE!", "!FALSE!", a, fixed = TRUE)), TRUE)   # flags are recomputed
-})
-
-test_that("tPn.flat() moves notation between chromosome copies without touching other fields", {
-  s0 <- mk_tpn("g0T_0002", 10)
-  s1 <- fenv$tPn.flat(s0, ori = 0)
-  i0 <- mk_tpn("i0T_0003", 4)
-  expect_identical(s1, sub("^g0", "g1", s0))
-  expect_identical(fenv$tPn.flat(s1, ori = 1), s0)
-  expect_identical(fenv$tPn.flat(s0, ori = 2), s1)     # ori is taken modulo 2
-  expect_identical(fenv$tPn.flat(c(s0, i0), 0), c(s1, sub("^i0", "i1", i0)))
-  expect_identical(fenv$tPn.flat(s1, ori = 0), s1)     # nothing on copy 0 to move
-})
-
-test_that("h1.mod() leaves 'fixed' rates unchanged and always returns numbers", {
-  expect_identical(fenv$h1.mod(0.1, "fixed"), 0.1)
-  expect_identical(fenv$h1.mod(c("0.1", " 1e-04"), "fixed"), c(0.1, 1e-04))   # text, as apply() passes it
-})
-
-test_that("h1.mod() divides by copy number under 'charlesworth'", {
-  expect_equal(fenv$h1.mod(0.1, "charlesworth", numTpn = 4), 0.025)
-  expect_equal(fenv$h1.mod(c(0.1, 0.2), "charlesworth", numTpn = c(2, 4)), c(0.05, 0.05))
-  expect_equal(fenv$h1.mod(" 0.1", "charlesworth", numTpn = " 5"), 0.02)
-  expect_error(fenv$h1.mod(c(0.1, 0.2, 0.3), "charlesworth", numTpn = c(1, 2)), "Length of numTpn")
-})
-
-test_that("h1.mod() 'evolving' multiplies each rate by its own |N(1, 0.01)| draw", {
-  r <- c(0.1, 0.01, 0)
-  got <- withr::with_seed(11, fenv$h1.mod(r, "evolving"))
-  want <- withr::with_seed(11, r * abs(rnorm(3, mean = 1, sd = 0.01)))
-  expect_identical(got, want)
-  expect_identical(got[3], 0)
-  expect_true(all(got >= 0))
-  steps <- withr::with_seed(12, fenv$h1.mod(rep(1, 5000), "evolving"))
-  expect_true(abs(stats::sd(steps) - 0.01) < 0.001, info = "a 1% step whatever the rate")
-})
-
-test_that("tPn.comLoc() calls a copy 'terminus' when it lands farther from the origin", {
-  cmp <- function(old, new) {
-    fenv$tPn.comLoc(c(mk_tpn(old[1], as.numeric(old[2]), copyDir = "terminus"),
-                      mk_tpn(new[1], as.numeric(new[2]), copyDir = "terminus")), G = 100, gDF = cl_gdf)
-  }
-  # positions on the 100-bp circle: gene start - 1 + location, minus the gap length for intergenic labels
-  expect_identical(cmp(c("g0T_0002", 5), c("g0T_0002", 10)), "terminus")  # 40 -> 45
-  expect_identical(cmp(c("g0T_0002", 5), c("g0T_0002", 1)), "origin")     # 40 -> 36
-  expect_identical(cmp(c("g0T_0002", 5), c("g0T_0003", 10)), "origin")    # 40 -> 70: past the terminus, 30 from origin
-  expect_identical(cmp(c("g0T_0003", 10), c("g0T_0003", 1)), "terminus")  # 70 -> 61: 30 -> 39 from the origin
-  expect_identical(cmp(c("g0T_0002", 5), c("i0T_0002", 1)), "origin")     # 40 -> 31
-  expect_identical(cmp(c("g0T_0002", 5), c("i0T_0001", 5)), "origin")     # 40 -> -15, wraps to 85: 15 from origin
-  expect_identical(cmp(c("g0T_0002", 5), c("g1T_0002", 10)), "terminus")  # copy digit does not change the position
-  expect_identical(cmp(c("g0T_0002", 5), c("g0T_0002", 5)), "terminus")   # same spot: returns copyDir
-  expect_error(fenv$tPn.comLoc(mk_tpn("g0T_0002", 5), G = 100, gDF = cl_gdf), "Length-two")
-})
-
-test_that("gpSel() grows numbered blocks from the seeds (x == 0) through neighbours with x <= lim", {
-  ex <- c(0, .5, .6, .2, .7, .4, .3, .5, .2, .5, .3, 0, .5, .6, .2, .7, .4, .3, .5, .2, .5)   # example in func.r
-  expect_equal(fenv$gpSel(ex, rep(.5, 21)), c(2, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 2, 2, 2, 2, 2))
-  expect_equal(fenv$gpSel(c(0, .9, 0, .9), rep(.5, 4)), c(1, 0, 2, 0))           # two separate blocks
-  expect_equal(fenv$gpSel(c(0, .9, .1, .1, .9), rep(.5, 5)), c(1, 0, 0, 0, 0))   # qualifying genes cut off from seeds
-})
-
-test_that("gpSel() treats the chromosome as circular in both directions", {
-  expect_equal(fenv$gpSel(c(0, .9, .9, .4), rep(.5, 4)), c(1, 0, 0, 1))   # seed on gene 1 reaches the last gene
-  expect_equal(fenv$gpSel(c(.4, .9, .9, 0), rep(.5, 4)), c(1, 0, 0, 1))   # seed on the last gene reaches gene 1
-})
-
-test_that("gpSel() edge cases: no seed, every gene qualifies, a single gene", {
-  expect_equal(fenv$gpSel(c(.1, .2, .3), rep(.5, 3)), c(0, 0, 0))
-  expect_equal(fenv$gpSel(c(0, .1, .1, .1), rep(.5, 4)), c(1, 1, 1, 1))
-  expect_equal(fenv$gpSel(0, .5), 1)
-})
-
-test_that("gRc.prob() returns each seed gene and its contiguous neighbours, numbered by block", {
-  for (s in 1:25) {
-    out <- withr::with_seed(s, fenv$gRc.prob("0H_0002", g.hotspot = hot))
-    expect_named(out, c("locus_tag", "contiguous"))
-    expect_true("0H_0002" %in% out$locus_tag)
-    expect_true(all(startsWith(out$locus_tag, "0")))              # stays on the seed's copy
-    expect_false(any(c("0H_0004", "0H_0005") %in% out$locus_tag)) # 48 kb or more from the seed
-    expect_true(all(out$contiguous == 1))                         # one seed, one block
-  }
-  expect_equal(nrow(withr::with_seed(1, fenv$gRc.prob(character(0), g.hotspot = hot))), 0)
-})
-
-test_that("gRc.prob() joins two seeds through a gene 1 kb from both", {
-  two <- withr::with_seed(2, fenv$gRc.prob(c("0H_0001", "0H_0003"), g.hotspot = hot))
-  expect_setequal(two$locus_tag, c("0H_0001", "0H_0002", "0H_0003"))   # 0H_0002: threshold 0.5 + 0.5 = 1
-  expect_true(all(two$contiguous == 1))
-})
-
-test_that("gRc.prob() numbers copy-1 blocks after the copy-0 blocks", {
-  out <- withr::with_seed(3, fenv$gRc.prob(c("0H_0002", "1H_0004"), g.hotspot = hot))
-  b0 <- out$contiguous[startsWith(out$locus_tag, "0")]
-  b1 <- out$contiguous[startsWith(out$locus_tag, "1")]
-  expect_true("1H_0004" %in% out$locus_tag)
-  expect_true(length(b0) > 0 && length(b1) > 0)
-  expect_true(min(b1) > max(b0))
-})
-
-test_that("gRc.prob() takes a neighbour 1 kb away about half of the time", {
-  hits <- vapply(1:2000, function(s) {
-    withr::with_seed(s, "0H_0001" %in% fenv$gRc.prob("0H_0002", g.hotspot = hot)$locus_tag)
-  }, logical(1))
-  expect_true(abs(mean(hits) - 0.5) < 0.05, info = paste("observed", mean(hits)))
-})
-
-test_that("gRc.prob() blocks on the mock genome are unbroken runs on one chromosome copy", {
-  gi <- gin_main()
-  g <- gi$gene
-  n <- gi$numGene
-  for (s in 1:10) {
-    seeds <- withr::with_seed(s, sample(g$locus_tag, 6))
-    out <- withr::with_seed(s, fenv$gRc.prob(seeds, g.hotspot = g))
-    expect_true(all(seeds %in% out$locus_tag))
-    for (b in unique(out$contiguous)) {
-      tags <- out$locus_tag[out$contiguous == b]
-      cp <- unique(substr(tags, 1, 1))
-      expect_length(cp, 1)                                         # one copy per block
-      idx <- sort(match(tags, g$locus_tag[substr(g$locus_tag, 1, 1) == cp[1]]))
-      steps <- diff(c(idx, idx[1] + n))                           # gaps around the circle
-      expect_equal(sum(steps > 1), as.integer(length(idx) < n), info = paste(tags, collapse = " "))
+prepare <- function() {                  # builds the copy once, on first use
+  if (!is.null(cache$prep_error)) stop(cache$prep_error, call. = FALSE)
+  if (is.null(cache$sb)) {
+    res <- tryCatch({
+      root <- file.path(tempdir(), "tpn_ci")
+      unlink(root, recursive = TRUE)
+      sb <- list(code = file.path(root, basename(code_dir)), raw = file.path(root, "raw"), data = file.path(root, "data"))
+      for (d in sb) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+      raw_files <- list.files(raw_dir, full.names = TRUE)
+      raw_files <- raw_files[!dir.exists(raw_files)]
+      if (!all(file.copy(file.path(code_dir, scripts), sb$code, overwrite = TRUE)) ||
+          !all(file.copy(raw_files, sb$raw, overwrite = TRUE))) stop("could not copy the project into ", root)
+      write_gfitness(file.path(sb$data, "gFitness.csv"))
+      get_gff(file.path(sb$data, GFF_NAME))
+      write_lf(paste(RERUN$seed, RERUN$scenario, sep = ","), file.path(sb$data, "rerun.csv"))
+      sb$reruns <- utils::read.csv(file.path(sb$data, "rerun.csv"), header = FALSE, col.names = c("seed", "scenario"))
+      write_lf(CAPTURE, file.path(sb$code, "capture_state.r"))
+      sb
+    }, error = function(e) e)
+    if (inherits(res, "error")) {
+      cache$prep_error <- conditionMessage(res)
+      stop(cache$prep_error, call. = FALSE)
     }
+    cache$sb <- res
   }
-})
-
-##### 5. Unit tests: func_analysis.r #####
-test_that("the colour palette sim_summary.r plots with (cBp) is available after sourcing func_analysis.r", {
-  expect_true(exists("cBp", envir = aenv))                  # colour.r is sourced into the global environment
-  pal <- get("cBp", envir = aenv)
-  expect_gte(length(pal), 1)
-  expect_error(grDevices::col2rgb(pal, alpha = TRUE), NA)
-})
-
-test_that("fAmily() follows ancestry through copy-0 (1..n) and copy-1 (n+1..2n) parent indices", {
-  tr <- rbind(c("1;1", "2;2", "3;3"),
-              c("4;4", "4;4", "2;6"))
-  out <- aenv$fAmily(tr)
-  expect_equal(unlist(out[1, ], use.names = FALSE), c(1, 1, 1))
-  expect_equal(unlist(out[2, ], use.names = FALSE), c(2, 0.5, 0.5))
-  n <- 40                                                # a population size other than 30
-  big <- rbind(paste0(seq_len(n), ";", seq_len(n)), rep("45;45", n))
-  expect_equal(unlist(aenv$fAmily(big)[2, ], use.names = FALSE), replace(numeric(n), 5, n))
-})
-
-test_that("fAmily() handles a single generation", {
-  out <- aenv$fAmily(rbind(c("1;2", "2;2")))
-  expect_equal(dim(out), c(1, 2))
-  expect_equal(unlist(out[1, ], use.names = FALSE), c(0.5, 1.5))
-})
-
-test_that("fAmily() conserves total ancestry in every generation", {
-  withr::local_seed(9)
-  n <- 12
-  g <- 6
-  pick <- function(k, m) paste(sample(k, m, TRUE), sample(k, m, TRUE), sep = ";")
-  tr <- rbind(pick(3, n), matrix(pick(2 * n, n * (g - 1)), nrow = g - 1))
-  expect_equal(unname(rowSums(aenv$fAmily(tr))), rep(n, g))
-})
-
-test_that("fAmily(state = 'diploid') counts each genome's founding template, including lost lineages", {
-  tr <- rbind(c("1;2", "3;1", "2;2"),       # genomes: copy 0 = 1, 3, 2; copy 1 = 2, 1, 2
-              c("1;4", "5;1", "4;4"))       # parents carry only templates 1 and 2: template 3 is lost
-  out <- aenv$fAmily(tr, "diploid")
-  expect_equal(dim(out), c(2, 3))
-  expect_equal(unlist(out[1, ], use.names = FALSE), c(1, 1.5, 0.5))   # genome counts / 2
-  expect_equal(unlist(out[2, ], use.names = FALSE), c(1.5, 1.5, 0))
-  one <- aenv$fAmily(tr[1, , drop = FALSE], "diploid")                # a single generation
-  expect_equal(dim(one), c(1, 3))
-})
-
-test_that("fAmily(state = 'diploid') conserves ancestry: each generation sums to the population size", {
-  withr::local_seed(19)
-  n <- 12
-  g <- 6
-  pick <- function(k, m) paste(sample(k, m, TRUE), sample(k, m, TRUE), sep = ";")
-  first <- c("1;2", "3;1", "2;3", pick(3, n - 3))                    # every founding template is used
-  tr <- rbind(first, matrix(pick(2 * n, n * (g - 1)), nrow = g - 1))
-  expect_equal(unname(rowSums(aenv$fAmily(tr, "diploid"))), rep(n, g))
-})
-
-test_that("fAmily(state = 'diploid') gives one column per founding template actually used", {
-  out <- aenv$fAmily(rbind(c("2;3", "3;2", "3;3")), "diploid")       # template 1 never drawn
-  expect_equal(unlist(out[1, ], use.names = FALSE), c(1, 2))         # columns = templates 2 and 3
-})
-
-##### 6. Input data used by simulate.r's defaults #####
-test_that("the input file defines every parameter the scripts read, exactly once", {
-  pms <- utils::read.csv(f_input, header = TRUE)
-  expect_true(all(c("Type", "Value") %in% names(pms)))
-  src <- unlist(lapply(file.path(code_dir, scripts), readLines, warn = FALSE))
-  hits <- unlist(regmatches(src, gregexpr('xIn\\("[^"]+"', src)))
-  keys <- unique(sub('^xIn\\("', "", sub('"$', "", hits)))
-  expect_gt(length(keys), 0)
-  n <- vapply(keys, function(k) sum(pms$Type == k), integer(1))
-  expect_true(all(n == 1), info = paste("missing or duplicated:", paste(keys[n != 1], collapse = " | ")))
-})
-
-test_that("input values are in the ranges the code assumes", {
-  pms <- utils::read.csv(f_input, header = TRUE)
-  val <- function(k) as.character(pms$Value[pms$Type == k][1])
-  num <- function(k) suppressWarnings(as.numeric(val(k)))
-  whole <- function(x) length(x) > 0 && all(is.finite(x) & x == round(x))
-  gens <- num("host organism constant generation number")
-  pop <- num("host organism constant population size")
-  gv <- suppressWarnings(as.numeric(strsplit(val("host genetic variation"), ";", fixed = TRUE)[[1]]))
-  expect_true(whole(gens) && gens >= 1, info = "generation number")
-  expect_true(whole(pop) && pop >= 3, info = "population size (recombination samples a donor among the other hosts)")
-  expect_true(whole(num("host genome variation")) && num("host genome variation") >= 1)
-  expect_true(whole(gv) && all(gv >= 1 & gv <= 26), info = "host genetic variation: 1-26, optionally per gene with ';'")
-  expect_true(isTRUE(num("transposon population size per genome mean") > 0))
-  for (k in c("percentage transposon perturbation genotoxic", "percentage chance transposon perturbation boost")) {
-    expect_true(isTRUE(num(k) >= 0 && num(k) <= 100), info = k)
-  }
-  expect_true(isTRUE(num("percentage amplitude transposon perturbation boost") >= 0))
-  expect_true(tolower(val("full result")) %in% c("yes", "no", "true", "false"))
-})
-
-test_that("the gene fitness file named in the input file exists", {
-  skip_if_not(dir.exists(data_dir), "../data not found")
-  pms <- utils::read.csv(f_input, header = TRUE)
-  fit <- pms$Value[pms$Type == "gene fitness"][1]
-  expect_true(file.exists(file.path(code_dir, fit)), info = fit)
-})
-
-test_that("transposon template keeps the column order simulate.r reads by position", {
-  # simulate.r reads x[11], x[13], x[15]-x[17] (rate rules) and x[1], x[23] (copy direction) by position
-  expect_identical(names(tpn_tmpl), c("gene", "location", "generation", "valid", "uniqID", "size",
-                                      "jumpRate", "jumpH1", "copyRate", "copyH1", "copyDir"))
-})
-
-test_that("transposon template values are valid", {
-  t <- tpn_tmpl
-  expect_true(all(t$valid %in% TRUE))
-  expect_true(all(t$size > 0 & t$size == round(t$size)))
-  for (r in c("jumpRate", "copyRate")) expect_true(all(t[[r]] >= 0 & t[[r]] <= 1), info = r)
-  for (h in c("jumpH1", "copyH1")) expect_true(all(t[[h]] %in% c("fixed", "charlesworth", "evolving")), info = h)
-  expect_true(all(t$copyDir %in% c("both", "terminus", "origin")))
-})
-
-test_that("transposon IDs are unique and safe inside transposon strings", {
-  ids <- utils::read.csv(f_tpn, header = TRUE, colClasses = "character", na.strings = character(0))$uniqID
-  expect_false(anyDuplicated(ids) > 0)
-  # tPn.io() re-reads single transposons, so an ID must not look like NA, a logical or a number
-  convertible <- ids[vapply(ids, function(u) !is.character(utils::type.convert(u, as.is = TRUE)), logical(1))]
-  expect_true(length(convertible) == 0,
-              info = paste("tPn.io() would read these as NA/logical/number:", paste(convertible, collapse = ", ")))
-  expect_false(any(grepl("[!; ]", ids)), info = "IDs must not contain '!', ';' or spaces")
-  expect_false(any(grepl("[gi][01]", ids)), info = "tPn.flat() rewrites g0/g1/i0/i1 anywhere in a transposon string")
-})
-
-test_that("host template has the expected columns and values", {
-  h <- host_tmpl
-  expect_true(all(c("recom", "recomH1", "cell", "homologousAutoRecom", "hAReomH1", "transposonEffect",
-                    "genotoxic") %in% names(h)))
-  expect_true(all(h$recom >= 0 & h$recom <= 1))
-  expect_true(all(h$recomH1 %in% c("switch", "homeostatic")))
-  expect_true(all(h$cell %in% c("haploid", "diploid")))
-  expect_true(all(h$homologousAutoRecom >= 0 & h$homologousAutoRecom <= 1))
-  expect_true(all(h$hAReomH1 %in% c("fixed", "evolving")))
-  expect_true(is.logical(h$transposonEffect) && !anyNA(h$transposonEffect))
-  expect_true(all(h$genotoxic >= 0 & h$genotoxic == round(h$genotoxic)))
-})
-
-test_that("scenario file points at existing template rows", {
-  skip_if_not(file.exists(f_scen), "scenario file not found")
-  sc <- real_scenarios()
-  expect_true(all(c("transposon", "host") %in% names(sc)))
-  expect_true(all(!is.na(sc$host) & sc$host >= 1 & sc$host <= nrow(host_tmpl)))
-  ids <- unique(unlist(strsplit(unique(sc$transposon), ";", fixed = TRUE)))
-  # same rule as simulate.r: tPn.0$uniqID %in% strsplit(sCene$transposon, ";")[[1]]
-  n_rows <- vapply(ids, function(id) sum(tpn_tmpl$uniqID %in% id), integer(1))
-  expect_true(all(n_rows == 1),
-              info = paste("unmatched or ambiguous IDs:", paste(utils::head(ids[n_rows != 1], 10), collapse = ", ")))
-})
-
-test_that("simulate.r's default seed and scenario exist, and its skip-read returns that row", {
-  skip_if_not(file.exists(f_seed) && file.exists(f_scen), "seed or scenario file not found")
-  seeds <- utils::read.csv(f_seed, header = FALSE)[, 1]
-  k_seed <- suppressWarnings(as.numeric(sim_defaults[3]))
-  k <- suppressWarnings(as.numeric(sim_defaults[5]))
-  expect_true(isTRUE(k_seed >= 1 && k_seed <= length(seeds)), info = sim_defaults[3])
-  sc <- real_scenarios()
-  expect_true(isTRUE(k >= 1 && k <= nrow(sc)), info = sim_defaults[5])
-  skip_if_not(isTRUE(k >= 1 && k <= nrow(sc)))
-  one <- utils::read.csv(f_scen, header = FALSE, skip = k, nrows = 1, col.names = c("transposon", "host"),
-                         colClasses = c("character", "integer"), na.strings = "")
-  expect_equal(one, sc[k, ], ignore_attr = TRUE)
-})
-
-test_that("seed file holds distinct whole-number seeds", {
-  skip_if_not(file.exists(f_seed), "seed file not found")
-  s <- utils::read.csv(f_seed, header = FALSE)[, 1]
-  expect_gt(length(s), 0)
-  expect_true(is.numeric(s) && !anyNA(s) && all(s == round(s)))
-  expect_false(anyDuplicated(s) > 0)
-})
-
-##### 7. Real genome in ../data (skipped when absent) #####
-real_ref <- local({
-  pms <- utils::read.csv(f_input, header = TRUE)
-  as.character(pms$Value[pms$Type == "ref genome"][1])
-})
-real_key <- strsplit(real_ref, "[.]")[[1]][1]       # gffClean() matches on the part before the first dot
-real_gffs <- if (dir.exists(data_dir)) list.files(data_dir, pattern = "gff$") else character(0)
-skip_no_genome <- function() skip_if(length(real_gffs) == 0, "no *.gff in ../data")
-real_env <- function() {
-  if (is.null(cache$renv)) {
-    e <- new.env()
-    real_argv <- sim_defaults
-    real_argv[1] <- f_input
-    assign("argv", real_argv, envir = e)
-    withr::with_dir(code_dir, sys.source("func.r", envir = e, keep.source = FALSE))
-    cache$renv <- e
-  }
-  cache$renv
-}
-real_gff <- function() {                 # parsing a full GFF is slow, so do it once
-  if (is.null(cache$rgff)) cache$rgff <- withr::with_dir(code_dir, real_env()$gffClean())
-  cache$rgff
+  cache$sb
 }
 
-test_that("real genome: exactly one GFF in ../data is named after 'ref genome'", {
-  skip_no_genome()
-  expect_equal(sum(grepl(real_key, real_gffs, fixed = TRUE)), 1,
-               info = paste("GFF files:", paste(real_gffs, collapse = ", ")))
-})
-
-test_that("real genome: a region row, and unique, ordered locus tags", {
-  skip_no_genome()
-  g <- real_gff()
-  expect_true(any(g$type == "region"), info = "gIn() reads the genome size from the first region row")
-  u <- unique(g[which(g$type != "region" & !is.na(g$locus_tag)), c("locus_tag", "start", "end")])
-  dup <- unique(u$locus_tag[duplicated(u$locus_tag)])
-  expect_true(length(dup) == 0,
-              info = paste("locus tags with several coordinates:", paste(utils::head(dup), collapse = ", ")))
-  expect_false(is.unsorted(u$start), info = "gIn() assumes genes are sorted by start")
-})
-
-test_that("real genome: recombination genes listed in the input file exist", {
-  skip_no_genome()
-  rec <- strsplit(real_env()$xIn("genes for recombination mechanism"), ";", fixed = TRUE)[[1]]
-  missing <- setdiff(rec, real_gff()$locus_tag)
-  expect_true(length(missing) == 0, info = paste("not in the GFF:", paste(missing, collapse = ", ")))
-})
-
-test_that("real genome: the gene fitness file is usable", {
-  skip_no_genome()
-  f <- file.path(code_dir, real_env()$xIn("gene fitness"))
-  skip_if_not(file.exists(f), "gene fitness file not found")
-  fit <- utils::read.csv(f, header = TRUE)
-  expect_true(all(c("locus_tag", "fitness") %in% names(fit)))
-  expect_true(is.numeric(fit$fitness))
-  expect_true(all(fit$fitness[!is.na(fit$fitness)] >= 0))
-  tags <- unique(real_gff()$locus_tag)
-  expect_gt(mean(tags[!is.na(tags)] %in% fit$locus_tag), 0)
-})
-
-test_that("real genome: gIn() builds a consistent gene table", {
-  skip_no_genome()
-  e <- real_env()
-  orig <- e$gffClean
-  assign("gffClean", function(...) real_gff(), envir = e)     # reuse the parsed GFF
-  withr::defer(assign("gffClean", orig, envir = e))
-  gi <- withr::with_dir(code_dir, withr::with_seed(1, e$gIn()))
-  expect_gt(gi$numGene, 0)
-  expect_equal(nrow(gi$gene), 2 * gi$numGene)
-  expect_false(anyNA(gi$gene$locus_tag))
-  expect_true(all(gi$gene$length > 0))
-  expect_true(all(gi$gene$interLength >= 0))
-  expect_length(gi$genome, 2)
-})
-
-##### 8. End-to-end runs of simulate.r + sim_summary.r (in the throwaway copies) #####
-pick_row <- function(tmpl, crit, id = FALSE) {
-  ok <- if (id) !is.na(tmpl$uniqID) else rep(TRUE, nrow(tmpl))
-  for (nm in names(crit)) ok <- ok & !is.na(tmpl[[nm]]) & tmpl[[nm]] == crit[[nm]]
-  hit <- which(ok)[1]
-  if (is.na(hit)) NA else if (id) tmpl$uniqID[hit] else hit
-}
-
-# One row per scenario: c(transposon uniqID, host template row), picked by property from your templates.
-scenario_rows <- function() {
-  FX <- "fixed"
-  tpn <- function(j, cp, jh = FX, ch = FX, dir = "both") {
-    pick_row(tpn_tmpl, list(jumpRate = j, copyRate = cp, jumpH1 = jh, copyH1 = ch, copyDir = dir), id = TRUE)
-  }
-  host <- function(...) pick_row(host_tmpl, list(...))
-  hap <- host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX, genotoxic = 0, homologousAutoRecom = 0.9)
-  hap_rec <- host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX, genotoxic = 0,
-                  homologousAutoRecom = 0)
-  dip_rec <- host(recom = 0.1, recomH1 = "switch", cell = "diploid", hAReomH1 = FX, genotoxic = 0)
-  hap_rep0 <- host(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0, homologousAutoRecom = 0)
-  hap_rep1 <- host(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0, homologousAutoRecom = 1)
-  def <- c(NA, NA)
-  k <- suppressWarnings(as.numeric(sim_defaults[5]))
-  if (file.exists(f_scen)) {
-    sc <- real_scenarios()
-    if (isTRUE(k >= 1 && k <= nrow(sc))) def <- c(sc$transposon[k], sc$host[k])
-  }
-  list(
-    default = def,
-    fixed = c(tpn(0.1, 0.1), hap),
-    diploid = c(tpn(0.1, 0.1), host(recom = 0.1, recomH1 = "switch", cell = "diploid", hAReomH1 = FX,
-                                    genotoxic = 0, homologousAutoRecom = 0.5)),
-    h1_rules = c(tpn(0.1, 0.1, jh = "charlesworth", ch = "evolving"), hap),
-    genotoxic = c(tpn(0.1, 0.1), host(recom = 0.1, recomH1 = "switch", cell = "haploid", hAReomH1 = FX, genotoxic = 4)),
-    no_jumps = c(tpn(0, 0.1), hap),
-    copy_dir = c(tpn(0.1, 0.1, dir = "terminus"), hap),
-    copy_dir_copies_only = c(tpn(0, 0.1, dir = "terminus"), hap),
-    copy_dir_jumps_only = c(tpn(0.1, 0, dir = "terminus"), hap),
-    recom_tiny = c(tpn(0.1, 0.1), host(recom = 0.0001, recomH1 = "switch", cell = "haploid", hAReomH1 = FX,
-                                       genotoxic = 0)),
-    recomb_only = c(tpn(0.1, 0.1), hap_rec),
-    repair_only = c(tpn(0.1, 0.1), host(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0,
-                                        homologousAutoRecom = 0.9)),
-    inert = c(tpn(0, 0), host(recom = 0, cell = "diploid", hAReomH1 = FX, genotoxic = 0)),
-    hgt = c(tpn(0, 0), hap_rec),            # inert transposons: only inheritance and recombination change them
-    conversion = c(tpn(0, 0), dip_rec),
-    jumps_no_repair = c(tpn(0.1, 0), hap_rep0),     # jumps only, no copies, no recombination
-    jumps_full_repair = c(tpn(0.1, 0), hap_rep1)
-  )
-}
-
-integration <- function() {             # writes the main copy's scenario.csv on first use
-  if (is.null(cache$integ)) {
-    rows <- scenario_rows()
-    ok <- vapply(rows, function(r) !anyNA(r), logical(1))
-    if (!any(ok)) stop("no end-to-end scenario could be matched to the templates")
-    fill <- rows[[which(ok)[1]]]
-    tab <- data.frame(transposon = vapply(rows, function(r) as.character(if (anyNA(r)) fill[1] else r[1]), character(1)),
-                      host = vapply(rows, function(r) as.integer(if (anyNA(r)) fill[2] else r[2]), integer(1)),
-                      row.names = NULL)
-    utils::write.csv(tab, file.path(sb_main$raw, "scenario.csv"), row.names = FALSE)
-    cache$integ <- list(index = stats::setNames(seq_along(rows), names(rows)), ok = ok, tab = tab)
-  }
-  cache$integ
-}
-
-sb_extra <- function(name) {            # "sparse" and "lethal" copies, built on first use
-  key <- paste0("sb_", name)
+run_case <- function(scenario) {         # one simulate.r run per scenario listed in rerun.csv, cached
+  key <- as.character(scenario)
   if (is.null(cache[[key]])) {
-    FX <- "fixed"
-    aa <- pick_row(tpn_tmpl, list(jumpRate = 0.1, copyRate = 0.1, jumpH1 = FX, copyH1 = FX, copyDir = "both"),
-                   id = TRUE)
-    host <- pick_row(host_tmpl, list(recom = 0, cell = "haploid", hAReomH1 = FX, genotoxic = 0,
-                                     homologousAutoRecom = 0))
-    if (anyNA(c(aa, host))) skip("no template rows for this scenario")
-    p <- base_params
-    if (name == "sparse") {
-      # mean 0.01: rpois() is redrawn until >= 1, so nearly every host starts with exactly one transposon,
-      # and chromosome copies without transposons appear quickly
-      p[["transposon population size per genome mean"]] <- 0.01
-      p[["host organism constant generation number"]] <- 10
-      g <- mock_main
-      fit <- fit_main
-    } else {
-      # lethal: genes back to back (1-bp gaps) and all essential, so generation 1 leaves no viable host
-      g <- mock_genome(20, gap = 1, lead = 0, trail = 0, tiny = 1, tiny_len = 3)
-      fit <- list(tag = g$tags, value = rep(0, g$n))
-      p[["genes for recombination mechanism"]] <- g$tags[10]
-    }
-    cache[[key]] <- build_sandbox(name, g, fit, p, data.frame(transposon = aa, host = as.integer(host)))
+    sb <- prepare()
+    row <- sb$reruns[sb$reruns$scenario == scenario, , drop = FALSE]
+    if (nrow(row) == 0) stop("scenario ", scenario, " is not listed in data/rerun.csv", call. = FALSE)
+    seed <- row$seed[1]
+    out <- file.path(sb$data, sprintf("state--%s_%s.rds", seed, scenario))
+    message("Running simulate.r: seed index ", seed, ", scenario ", scenario)
+    args <- c("capture_state.r", "../raw/input-test.csv", "../raw/seed.csv", seed, "../raw/scenario.csv", scenario, out)
+    log <- withr::with_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)),
+                              withr::with_dir(sb$code, suppressWarnings(
+                                system2(file.path(R.home("bin"), "Rscript"), args, stdout = TRUE, stderr = TRUE, timeout = 3600))))
+    status <- attr(log, "status")
+    status <- if (is.null(status)) 0L else status
+    state <- if (file.exists(out)) readRDS(out) else NULL
+    cache[[key]] <- list(ok = status == 0 && !is.null(state), state = state,
+                         tail = paste(c(sprintf("--- last lines of the simulate.r log (seed %s, scenario %s) ---", seed, scenario),
+                                        utils::tail(log, 30)), collapse = "\n"))
   }
   cache[[key]]
 }
 
-run_cache <- new.env()
-run_sim <- function(sb, k, seed_index = 1L, input = "../raw/input.csv") {
-  key <- paste(basename(sb$root), k, seed_index, input, sep = "_")
-  if (is.null(run_cache[[key]])) {
-    rscript <- file.path(R.home("bin"), "Rscript")
-    args <- c("simulate.r", input, "../raw/seed.csv", as.character(seed_index), "../raw/scenario.csv", as.character(k))
-    out <- withr::with_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)),
-                              withr::with_dir(sb$code, suppressWarnings(
-                                system2(rscript, args, stdout = TRUE, stderr = TRUE, timeout = 3600))))
-    status <- attr(out, "status")
-    run_cache[[key]] <- list(
-      status = if (is.null(status)) 0L else status,
-      log = out,
-      tail = paste(c("--- last lines of the simulate.r log ---", utils::tail(out, 30)), collapse = "\n"),
-      sim = file.path(sb$data, sprintf("tPn--%s_%s.rda", seed_index, k)),
-      pdf = file.path(sb$data, sprintf("ana--%s-%s.pdf", seed_index, k)),
-      ana = file.path(sb$data, sprintf("ana--%s_%s.rda", seed_index, k)))
-  }
-  run_cache[[key]]
-}
+ABSENT <- paste("NA means the variable did not exist when simulate.r finished: it removes i.mv or i.cp right after",
+                "using them when jumps or copies happened, or the activity stage never ran")
+ended <- function(st) sprintf("run ended at generation %s (eLim %s)", st$gEn, st$eLim)
 
-load_rda <- function(path) {
-  e <- new.env()
-  load(path, envir = e)
-  e
-}
-# Split recorded transposon strings into a character matrix of the 11 template fields.
-tpn_fields <- function(cells) {
-  tok <- unlist(strsplit(cells[!is.na(cells)], ";", fixed = TRUE))
-  tok <- tok[nzchar(tok)]
-  f <- strsplit(tok, "!", fixed = TRUE)
-  list(n = lengths(f), m = if (length(f)) do.call(rbind, f[lengths(f) == 11]) else NULL)
-}
-# Sorted "region+locus@location" keys per chromosome copy (copy digit removed) for one host record.
-chrom_keys <- function(cell) {
-  out <- list(character(0), character(0))
-  m <- if (is.na(cell) || !nzchar(cell)) NULL else tpn_fields(cell)$m
-  if (is.null(m)) return(out)
-  key <- paste0(substr(m[, 1], 1, 1), substring(m[, 1], 3), "@", as.numeric(m[, 2]))
-  copy <- substr(m[, 1], 2, 2)
-  list(sort(key[copy == "0"]), sort(key[copy == "1"]))
-}
-# Identity keys per chromosome copy (region, locus, location, generation, transposon ID; copy digit removed).
-copy_keys <- function(cell) {
-  m <- if (is.na(cell) || !nzchar(cell)) NULL else tpn_fields(cell)$m
-  if (is.null(m)) return(list(character(0), character(0)))
-  key <- paste(substr(m[, 1], 1, 1), substring(m[, 1], 3), as.numeric(m[, 2]), m[, 3], m[, 5], sep = "|")
-  copy <- substr(m[, 1], 2, 2)
-  list(key[copy == "0"], key[copy == "1"])
-}
-genome_keys <- function(tr_row, g) {    # keys of parent genome g (1..n copy 0, n+1..2n copy 1)
-  copy_keys(tr_row[(g - 1) %% length(tr_row) + 1])[[(g - 1) %/% length(tr_row) + 1]]
-}
-# For every host record after generation 0: transposons gained versus its two parent genomes, and how many
-# carry the current generation stamp (placed by a jump or copy in that generation).
-count_changes <- function(e) {
-  do.call(rbind, lapply(2:nrow(e$rec.offspring), function(r) {
-    t(vapply(seq_len(ncol(e$rec.offspring)), function(j) {
-      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
-      before <- sum(vapply(k, function(g) length(genome_keys(e$rec.transposon[r - 1, ], g)), integer(1)))
-      m <- tpn_fields(e$rec.transposon[r, j])$m
-      after <- if (is.null(m)) 0 else nrow(m)
-      placed <- if (is.null(m)) 0 else sum(as.numeric(m[, 3]) == r - 1)
-      c(change = after - before, placed = placed)
-    }, numeric(2)))
-  }))
-}
-# Host records holding the same transposon twice (identical in every field except 'valid').
-same_spot_duplicates <- function(tr) {
-  bad <- character(0)
-  for (r in seq_len(nrow(tr))) {
-    for (j in seq_len(ncol(tr))) {
-      cell <- tr[r, j]
-      if (is.na(cell) || !nzchar(cell)) next
-      tok <- strsplit(cell, ";", fixed = TRUE)[[1]]
-      tok <- tok[nzchar(tok)]
-      key <- vapply(strsplit(tok, "!", fixed = TRUE), function(f) paste(f[-4], collapse = "!"), character(1))
-      if (anyDuplicated(key) > 0) {
-        bad <- c(bad, sprintf("generation %d host %d: %s", r - 1, j, key[duplicated(key)][1]))
-      }
-    }
-  }
-  bad
-}
+##### 3. Contents of data/gFitness.csv (locus tags without the 'SPD_' prefix) #####
+GFITNESS_TABLE <- "
+  0001,0 0002,0.00437254044599913 0003,0.0297914597815293 0004,0.025964723789059 0005,0.00712758374910905 0006,0.0554220274282483 0007,0.0790067720090293 0008,0
+  0009,0.0320769847634322 0010,0.013442985924403 0011,0 0012,0.00740877940359326 0013,0 0014,1 0023,0.148999574286931 0024,0.00229744218103844
+  0025,0.014865151836908 0027,0.0368912936546975 0028,0.138494318181818 0029,1 0030,0.0893219650832318 0031,0.12985029025359 0032,0.636704119850187 0033,0
+  0035,0.248116969428445 0036,1 0037,0.0655457395269308 0038,0.0011352885525071 0039,0.0861678004535147 0040,0.103082565169987 0041,0.0315834400341443 0042,0.0012929919834497
+  0043,0.00610935749923633 0044,0.0216637781629116 0046,0.0795644891122278 0047,1 0049,0.0896965190314635 0050,0.109253065774805 0051,0.101125195841048 0052,0.0784198271016781
+  0053,0.0864774391519632 0054,0.0751653638003608 0055,0.0778761061946903 0056,0.293722403532348 0057,0.0852127114300359 0058,0.127178520960904 0059,0.0375234521575985 0060,0.0631578947368421
+  0061,0.260141093474427 0062,0.00541460396039604 0063,0.116569737781859 0064,0.0617792421746293 0065,0.097891145046708 0066,0.124275062137531 0067,0.20778364116095 0068,0.167692122089516
+  0069,0.107212475633528 0070,0.149498790183201 0071,0.107845008589425 0072,1 0073,1 0074,0.0873989042525437 0075,1 0076,0.146801051709027
+  0077,0.0942535725144421 0078,1 0079,1 0080,1 0081,0.12370254514432 0082,0.074108818011257 0083,0.00162311313098523 0084,1
+  0085,0.0719424460431655 0086,0.132844709115896 0087,0.11368804001819 0088,0.220916312982914 0089,0.11812280515058 0090,0.113589987756768 0091,0.078581503123111 0092,0.142512354901735
+  0093,0.188264525993884 0094,0.114557440830001 0095,0.101647388713635 0096,0.127698388567954 0097,0.182210708117444 0098,0.024324559117366 0099,0.00218150087260035 0101,0.204838709677419
+  0102,0.0437939379970036 0103,0.0415738678544915 0104,0.125871417505809 0105,0.103135313531353 0106,1 0107,0.168614040087394 0108,0.105263157894737 0109,0.0969305331179321
+  0110,0.0416597233794368 0111,1 0112,0.043493593511226 0114,1 0115,1 0116,0.27906976744186 0117,1 0118,1
+  0119,1 0120,1 0121,1 0122,1 0123,1 0124,1 0125,0.245220282626766 0126,1
+  0127,0 0128,0.0151909722222222 0129,0.000520833333333333 0130,0 0131,0 0132,0.183606557377049 0133,0.14277869302581 0134,0.00872854233343032
+  0135,0.0470588235294118 0136,0.0019559902200489 0138,0.223523589574398 0139,0.450824029771398 0140,0.30527289546716 0141,0.751815463477147 0142,0.426948687818253 0143,1
+  0144,0.175560981281246 0145,0.222513089005236 0146,0.267498885421311 0147,0.22972972972973 0148,0.16929931146213 0149,0.301351650786616 0150,0.00713351563428843 0151,0.108369840903851
+  0152,0.130137489890449 0153,0.10439198720963 0154,0.104197240974464 0155,0.158088881082031 0156,0.158160769607044 0157,0.192791797138822 0158,0.196816435348545 0159,0.275195239866121
+  0160,0.0106655290102389 0161,0.126692533058833 0162,0.101577696131403 0163,0.130166704727107 0164,0.0489396411092985 0165,0.10487730373689 0166,0.283315844700944 0167,0.236024844720497
+  0168,0.282006088767826 0169,0.188191223688905 0170,0 0171,0.0365296803652968 0172,0.214022140221402 0173,0.120318261207064 0174,0.0919540229885057 0175,0
+  0176,0 0177,0.0751236211487258 0178,0.0288878189696678 0179,0.0571230742599965 0180,0.0113981762917933 0181,1 0182,0.00977198697068404 0183,0.00719481972979455
+  0184,1 0185,0.0111577841953269 0186,0.0756840675334756 0187,0.00591419862608617 0188,0.0789473684210526 0189,0.00999800039992002 0190,0.00678656260604004 0191,0.0567352893499757
+  0192,0 0193,0 0194,0 0195,0 0196,0 0197,0 0198,0 0199,0
+  0200,0 0201,0 0202,0 0203,0 0204,0 0205,0 0206,0 0207,0
+  0208,0 0209,0 0210,0 0211,0 0212,0 0213,0 0214,0 0215,0
+  0216,0 0217,0 0218,0 0219,0 0220,0.167810831426392 0222,0.0835339091037803 0223,1 0224,1
+  0225,0.111881645862228 0226,0.701990317374933 0227,1 0228,1 0229,0.179054489243849 0230,0.0992457324335054 0231,0.199529315460964 0232,0.252638311480652
+  0233,0.333657272432783 0234,0.278927203065134 0235,0.272387906633302 0236,0.24702380952381 0237,0.216738002003461 0238,0.00197737878668038 0239,0.0822111977321049 0240,1
+  0241,0 0242,0.106326422115896 0243,0 0244,0 0245,0.03796867584243 0246,0.00163327526132404 0247,0.082680591818973 0248,0.00110454520351245
+  0249,0.118546845124283 0250,0.11524988635452 0251,0 0252,0.00213857998289136 0253,0.000963298333493883 0254,0.00113334995579935 0255,0.0829875518672199 0256,0.0249821556031406
+  0257,0.0966850828729282 0258,0.0242013552758955 0259,0.0171526586620926 0260,0.0864231948703652 0261,0.0646240401429332 0262,0.0509469487207886 0263,0.0364413169137974 0264,0.0271739130434783
+  0265,0.075046904315197 0266,0.0589390962671906 0267,0.134774673592587 0268,0.119865516737319 0269,0.0214592274678112 0270,0 0271,0 0272,0
+  0273,0.0870274680446016 0274,0 0275,0 0276,0.340356564019449 0277,0.2057238821636 0278,0.476782752902156 0279,0.130448615972001 0280,0.165331428279839
+  0281,0.223316912972085 0282,0.195686900958466 0283,0.247054351957431 0284,0.165380374862183 0285,0.244298938812373 0286,0.132094943240454 0287,0.183068517239214 0289,0.169976171564734
+  0290,0.137179745814 0291,0.13254113345521 0292,0.17433234421365 0293,0.160614525139665 0294,0.174789915966387 0295,0.171246515332537 0296,0.182322631787555 0297,0.231617647058824
+  0298,0.146782085058336 0300,0.0949981630189471 0301,0.0426926131850675 0302,1 0303,0.0204394481349004 0304,0 0305,0 0306,0
+  0307,0.0010048231511254 0308,0.0637370010063737 0309,0.0636550308008214 0310,0.0402982067298005 0311,0.123671617674476 0313,1 0315,0.0343739038933707 0316,1
+  0317,1 0318,1 0319,1 0320,1 0321,1 0322,1 0323,1 0324,1
+  0325,1 0326,1 0327,1 0328,1 0329,1 0330,1 0331,1 0333,1
+  0334,0.154372202946649 0335,0.14414859269951 0336,0.00699790062981106 0337,0.00165562913907285 0338,0.0514972344077818 0339,0 0341,0.0816712517193948 0342,0.0376320741062382
+  0343,0 0344,0 0345,1 0346,0 0347,0 0348,0 0349,0 0350,0
+  0351,0.00795782353526311 0352,0.0702763136879093 0353,1 0355,0.0923550538737814 0357,1 0359,1 0360,0.160909193203556 0361,0.205475985626803
+  0362,0.232876712328767 0363,0.171538596184141 0364,0.213143872113677 0365,0.0108468273030139 0366,0.0363790186125212 0367,0 0368,0.00923574232278919 0369,0.0941176470588235
+  0370,0.0527752502274795 0371,0.0330760749724366 0372,0.0601950624809509 0373,0.0681492109038737 0374,0.110975474420153 0375,0 0376,0.0424515786680817 0377,0.055381476353567
+  0378,0.00261335424016726 0379,0.0114442664225223 0380,0 0381,0 0382,0 0383,0 0384,0 0385,0.000816526496284804
+  0386,0 0387,0 0388,0.00869124357210111 0389,0 0390,0 0391,0.154867256637168 0392,0.164808531265148 0393,0
+  0394,0 0395,0 0396,0 0397,0 0398,0 0399,0.027716900863736 0400,1 0401,0.0210304942166141
+  0402,0.00270929287455974 0403,0.000612144955925563 0404,0.090983799013853 0405,0.0973957230573788 0406,0.124247718889536 0407,0.250189537528431 0408,0.126617895329207 0409,0.165262735659848
+  0410,0.0225631768953069 0411,0.0134861766689144 0412,0.101865410326606 0414,0.114845643240965 0413,1 0417,0.00356379187455453 0418,1 0419,0.0168665667166417
+  0420,0.0697344066118549 0421,1 0422,0.136005726556908 0423,0.180335968379447 0424,0.205804749340369 0425,0.314408624993361 0426,0.171750074030204 0427,0.233875653689715
+  0428,0.20354719676229 0429,0.0584022804699993 0430,0.076239822353812 0431,0.171530673019655 0432,0.0800436601782791 0433,1 0434,0.122950819672131 0435,0.164599236641221
+  0436,0.0573575949367089 0437,0.124145376034545 0438,0.0597884409014257 0439,0.130970724191063 0440,0.0404312668463612 0441,0.00507528336998816 0442,0.0548333436017497 0443,0.102382838686087
+  0444,0.109682066056179 0445,0.00083049580599618 0446,0.0189071658158442 0447,0.0136239782016349 0448,0.0149175803684642 0449,1 0451,1 0450,0.162254483347566
+  0452,0.152594099694812 0453,1 0454,0.105692180160265 0455,0.133271281096632 0456,0.0587371512481645 0457,0.0662916834069908 0458,0.00869061413673233 0459,0.03273007316134
+  0460,0.00271399880584053 0461,0.00798934753661784 0462,0.0683994528043776 0463,0.0361620057859209 0464,0.0606877950101146 0465,0.0640421925032963 0466,0.0941676792223572 0467,0.242571255306246
+  0468,0.0988891899214305 0469,1 0470,0.207792207792208 0473,0.16561629781621 0474,0.278934221482098 0475,0.126920507682031 0476,0 0477,0.0275313551544815
+  0478,0 0479,0.00175269476820612 0480,0 0481,0 0482,0 0483,0.00565450947130336 0484,0.154355016538037 0485,1
+  0486,1 0487,0.0669554942890902 0488,0.0582916075031761 0489,0.0196078431372549 0490,0.0774612693653173 0491,0.0504355800091701 0492,1 0493,1
+  0494,0 0495,1 0496,0.00502828409805154 0499,1 0501,0.229520205103162 0502,0.251864663279645 0503,0.335315612237587 0504,0
+  0505,0.0446949086669258 0506,0.00167947264558929 0507,0.199572344975053 0509,0.0190114068441065 0510,0.0800467688986824 0511,0.0739115371289987 0512,0.0286385979910237 0513,0.0383397232872145
+  0514,0.0826723271142889 0515,0 0516,0.0580954786562263 0517,0.0708005024551787 0518,0.14613309352518 0519,0.0274725274725275 0521,0.0661427126293674 0522,0.177404295051354
+  0523,0.0967670991862767 0524,0.0711582134746404 0525,0.129459581514376 0526,0.00343131648175683 0527,0.182736842105263 0528,0.132092464725308 0529,0.183281180151989 0530,0.10612760581175
+  0532,0.00135086455331412 0533,0.00122488975992161 0534,0.0371461508902267 0535,0.076720013199142 0536,0.00569661458333333 0537,0.0983702833651446 0538,0.0038362470543103 0539,0.0371213028379835
+  0540,0.0864517722613314 0541,0.0622790775963642 0542,0.0256027309579689 0543,0.0690700808625337 0544,1 0545,1 0546,0.071660756501182 0547,0.128611001187178
+  0548,0.0755016888535665 0549,0.0589606471959413 0550,0 0551,0.00864304235090752 0552,1 0553,0.350347327091513 0554,0.054 0555,0.0921603830041891
+  0556,0.14218009478673 0558,0.212742795826011 0559,0.0487081745023295 0560,0.00959385992964503 0561,0.125093480182201 0562,0.109595568527012 0564,0.0678541136556404 0565,1
+  0566,1 0567,0.100600070596541 0568,0.0118764845605701 0569,0.0807833537331701 0570,0.107476083618755 0571,0.147392290249433 0572,0.08325952170062 0573,0.0934780272912861
+  0574,0.0879028882377564 0575,0.100508525276698 0576,0.103479036574487 0577,1 0578,0.0770912438154413 0579,0.134289176090469 0580,0.0558659217877095 0581,0
+  0582,0.0341880341880342 0583,0 0584,0.0402497125020536 0585,0.0582127123977344 0586,0 0587,0.0504983388704319 0588,0.111294311624073 0589,0.161764705882353
+  0590,0.121854304635762 0591,0.233482364629906 0592,0.116472545757072 0593,0 0594,0.0309597523219814 0595,1 0596,0.154809446334369 0597,0.129566031845145
+  0598,0 0599,0 0600,0.000837170364169108 0601,0.0766609880749574 0602,0.0389105058365759 0603,0.175660305825856 0604,0.154618473895582 0606,0.136948015651202
+  0608,0.00566973777462792 0609,0.0111642743221691 0610,0.22108843537415 0611,0.221584984358707 0612,0.303585448835383 0613,0.189721081693331 0614,0.231073274551535 0616,0.0663922453857389
+  0617,0.0969230769230769 0618,0.106135504507124 0619,1 0620,0 0621,0.0501804736332424 0622,0.0808020350142152 0623,0.184783993883013 0624,0.238326848249027
+  0625,0.131747483989021 0626,0.0797184717035335 0627,0.106580166821131 0628,0.100980957876515 0629,0.151718840023046 0630,0.091640866873065 0631,0.0766583229036295 0632,0.0717672689991029
+  0633,0.0665642601126472 0634,0.115194733955019 0635,0.0899409343117952 0636,0.00390559616135692 0637,0.0711642470822659 0638,1 0639,0.0434530706836616 0641,0.0104340567612688
+  0642,0.0676397294410822 0644,0.0882807327300816 0645,0.053690131242543 0646,0.0585284280936455 0647,0.0361859960195404 0648,0.204345020434502 0649,0.03586464992983 0650,0.0119007140428426
+  0651,0.12133072407045 0652,0.0701724721001015 0653,0.113636363636364 0654,0.0812836482634857 0655,0.100515804787726 0656,0.0493096646942801 0657,0.0975907288807563 0658,0
+  0659,0 0660,0.00107968041459728 0661,0.0858388799632775 0662,0.0865326020719074 0663,0.000732225232481511 0664,0 0665,0.0610670666380973 0666,0.000976276481499561
+  0667,0.0050125313283208 0668,0.0893688326196239 0669,0.0754994936009576 0670,1 0671,0.0722875731090228 0672,0.119483052913923 0673,0.136425648021828 0674,0
+  0675,0.00412371134020619 0676,0.157822506861848 0677,0.19060773480663 0678,0.00195924764890282 0679,0 0680,0.0354400472533963 0681,0.0625978090766823 0683,0.00916170407695831
+  0682,1 0684,0.0590363740239954 0685,0.0942556033842957 0686,0.094260225551254 0687,0.0396263798471554 0688,0.107968737410362 0689,0.00248669617546128 0690,1
+  0691,0.0153092467850582 0692,0.106333795654184 0693,0.10976253298153 0694,0.0580671920364994 0695,0.0769865273577124 0696,0.090274928190398 0697,1 0698,0.100176782557454
+  0699,0.0573065902578797 0700,0.0226359130468719 0701,0.00835421888053467 0702,0.0157681333533564 0703,0.0499464859079558 0704,0.096403411197627 0705,0.0374714890843923 0706,0.00326530612244898
+  0707,0.0270172910662824 0708,0.0226244343891403 0709,0 0710,0 0711,0.0412768299394606 0712,1 0714,0.0227790432801822 0715,0.152489873719323
+  0716,1 0717,0.0593104058779268 0718,0.0265721877767936 0719,0.10183299389002 0720,0.0346158966848622 0721,0.00344986200551978 0722,1 0723,0.00585308750365818
+  0724,0.0629295354806657 0726,0.0628693574751666 0727,0.0839880791113519 0728,0.29893924783028 0729,0.0477372541531411 0730,0.0228017671369531 0731,0.0447383777475199 0732,0.0212856534695615
+  0733,0.00109134562916076 0734,0.059387848332572 0735,0.0100317672629995 0736,0.0297409407529154 0737,0.11119936457506 0738,0.0632591093117409 0739,0.022766078542971 0740,0.0288979377380796
+  0741,0.03941071596134 0742,0.0411132194813409 0745,0 0746,0.00208051596796005 0747,0.0234558248631744 0748,0 0749,0.010803378511098 0750,1
+  0751,0.0893629287979245 0752,0.078740157480315 0753,0.0614533722538024 0754,0.00831600831600832 0757,0 0759,0.0270720533111204 0760,0 0761,0.0361757105943152
+  0762,0.00259100919808265 0763,0 0764,0 0765,0.0045903144365389 0766,0.00142765365122421 0767,0.00401445202729827 0768,0.00807030129124821 0771,0.033306687982947
+  0772,0.00885151582208453 0773,0.0581010142194587 0774,0 0775,0.104364326375712 0776,0.030839721561371 0777,0.056308144279419 0778,0.0724809885931559 0779,0.0794585050029429
+  0780,0.0809418690213392 0781,0.118772964197214 0782,0.117702448210923 0783,0.154911008569545 0784,0.121640650747521 0785,1 0786,0.088253834839252 0787,0.0730923341112236
+  0788,0 0789,0 0790,0.00133815067576609 0791,1 0792,0.0959561343385881 0793,1 0795,0.10213852537504 0796,1
+  0797,0.157278712509144 0798,0.086216425334365 0799,0.0455235204855842 0800,0.897552130553037 0801,0.285494568874363 0802,0.0383697534041458 0803,0.104542177361211 0804,0.108811040339703
+  0805,0.124399494310999 0806,0.066541545811295 0807,1 0808,1 0809,0.0864572779466397 0811,0.0693000693000693 0812,0.112682809877727 0813,0.110365530637471
+  0814,0.0764202191326766 0815,0.0897686730348717 0816,0.0869784444724568 0817,0.153550863723608 0818,0.0467185761957731 0819,0.0222419928825623 0820,0.00112044817927171 0821,0.0678947368421053
+  0822,0.0788813194693439 0823,0.0690954773869347 0824,0.054917623564653 0825,0 0826,0.00668300289596792 0827,0 0828,0.0256529850746269 0829,0.0635470826112074
+  0831,1 0830,1 0832,1 0833,0.0623608017817372 0834,0 0835,0 0836,0.0409020561574176 0837,0.0331282536677709
+  0838,0.0343178036605657 0839,0.143446649636471 0840,0.147826086956522 0842,0.0999286224125625 0843,0.0860046911649726 0844,0.0876763540878544 0845,0.139004149377593 0846,0.103328533920556
+  0847,0 0848,0 0849,0.0112644325542101 0850,0.129561078794289 0851,0.0666834423754404 0852,0.055746140651801 0853,1 0854,0.0535573002251841
+  0855,0 0856,0.00491521258294421 0857,0.00775795190069822 0858,0.0182615047479912 0859,0 0860,0.024869435463815 0861,0.00863930885529158 0862,0.0185721072863128
+  0863,0.00848896434634975 0864,0.0383453404601441 0865,0.0452108085374829 0866,0.0745562788627386 0867,0.0280662363177098 0868,0.0798990748528175 0869,1 0870,0.0550072803753438
+  0871,0.0477475607224414 0872,0.0665241149916845 0873,0.0909426078407275 0874,0 0875,0.0351786706165525 0876,0.00932835820895522 0877,0 0878,0
+  0879,0.0454621990234046 0880,0.00113707430780602 0883,0.0673575129533679 0884,0.019714144898965 0885,0.06229647458587 0886,0.0885595517802277 0887,0.136538188024463 0888,0.0640329932711092
+  0889,0.0404401757592254 0890,0.127284386021161 0893,0.0884396715097915 0894,0.0986651189785258 0895,0.111852787299296 0896,0.0665601703940362 0897,0.148148148148148 0898,0.12311901504788
+  0900,0.0488974997693514 0901,0.0674590427240604 0902,0.000728544368352033 0903,0.0382513661202186 0904,0.0374468085106383 0905,0.0713685978169605 0906,0.000920217171252416 0907,0.00973946919892866
+  0908,0 0909,0.0468540829986613 0910,0.0556483027267668 0911,0.0343885910791949 0912,0.0341186027619821 0913,0.0570657812824237 0914,0.0591169406983189 0915,0.142927550517496
+  0916,0.229521171349426 0917,0.209804116535746 0918,0.208307346887863 0919,0.226390685640362 0920,0.112640801001252 0921,0.296898524540801 0922,0.136546184738956 0923,0.0995520159283226
+  0924,0.195307701756541 0925,0.186480186480186 0926,0.137861466039005 0927,1 0928,0.168843580758203 0929,0.256874095513748 0930,0.110531803962461 0931,0.158832644628099
+  0932,0.48907681465821 0933,0.285969615728329 0934,1 0935,1 0936,1 0938,1 0939,1 0940,1
+  0941,1 0942,1 0943,1 0944,1 0945,1 0946,1 0947,1 0948,1
+  0949,1 0950,1 0951,1 0952,0 0953,0.0110975474420153 0954,0.0441204680606177 0955,0.0727272727272727 0956,0.0313889615485221
+  0957,0 0958,0 0959,0.0152578577967653 0960,0 0961,0.0120400331100911 0962,0.0347021399652979 0963,0.0229357798165138 0964,0
+  0965,0 0967,0.000780457348005931 0968,0.0292077400511135 0969,0.0296273195072509 0970,0 0971,1 0972,1 0973,0.00219683655536028
+  0975,0.041524543971526 0974,0.0334837676517688 0976,0.00929368029739777 0977,0.0531443755535872 0978,0.0407569141193595 0979,0 0980,0.00209665583394486 0981,0.0327078671027716
+  0982,0.0488176964149504 0983,0.00121951219512195 0984,0.0621324753134362 0985,0.015462323471807 0987,0.0195503421309873 0988,0.0492402926280248 0989,0 0990,0
+  0991,0 0992,0.0559832050384884 0993,0.00784929356357928 0994,0.00672494956287828 0995,0.117564072419469 0996,0.069477719214183 0997,0.0217864923747277 0998,0.0483016516048613
+  0999,0.102468560782487 1000,0.14070351758794 1001,0.00605021679943531 1002,0.0761209134509614 1003,1 1004,0.0652370046498716 1005,0.0975786049873509 1006,0.102545968882603
+  1007,0.168776371308017 1008,0.0641338445451377 1011,0.0817096165933375 1010,0.101972954998892 1012,0.00153787004998078 1013,0.0158478605388273 1014,1 1015,0.000302361442868805
+  1016,0.00217497689087053 1017,0.0206167854995275 1018,1 1019,0.0035799522673031 1020,0.0267107606207072 1021,0.0318657735579112 1022,0.20052310374891 1023,0.00184331797235023
+  1024,0.0922509225092251 1025,0.0583368057622477 1026,0.0623759569038843 1027,0.0409263326013176 1028,0.0696125907990315 1029,0.0533274892249251 1030,0.0015802781289507 1031,0.0195100802081075
+  1032,0.0416538105522987 1033,0.127033307513555 1034,0.051827987113041 1035,0.176879343019583 1036,1 1037,1 1038,0.0972691384152049 1039,0.000579609343302614
+  1040,0 1041,0.00926354793886058 1042,0.00230936215417302 1043,0.00513347022587269 1044,0.0304474450622187 1045,1 1046,0.100268323683096 1047,0.143897568424762
+  1048,0.147465437788018 1049,0.116476583353555 1050,0.00206334468172908 1051,0.0771125629217093 1052,0.0318217979315831 1053,0.0642201834862385 1054,0.0675874228621804 1057,0.0421393841166937
+  1059,1 1060,0.0130982917644491 1061,0.0598639455782313 1062,0.0284262731341478 1063,0.00951927653498334 1064,0 1065,0.00683449139993166 1066,0.0105207785376118
+  1067,0.00297353553374963 1068,0.0613496932515337 1069,0.0161603102779573 1070,0.0215248668856916 1071,1 1072,0.0428849902534113 1073,1 1074,1
+  1075,0.0621967906456027 1076,0.0243013365735115 1077,0.000401703221659838 1078,0.00396275014860313 1079,0.0847822080235916 1080,0.0316856780735108 1081,0.0269749518304432 1082,0.0225152782245095
+  1083,0.00490918016691213 1084,0.000737245650250664 1085,0 1086,0.0638297872340425 1087,0.0353356890459364 1088,0 1089,0.00184433788270011 1090,0.012380615493456
+  1091,0.196527380270941 1093,1 1092,0.0439270810454645 1094,0.032974280061552 1095,0.0312174817898023 1096,0.001007912110064 1097,0.072153090034508 1098,0.0786636435148767
+  1099,0.052895700528957 1100,0 1101,0 1102,0.0453320264641019 1103,0.101174119410442 1104,0 1105,0 1107,0.0696008188331627
+  1108,0.124613003095975 1109,0.134652234709203 1110,0.0539447066756574 1111,0.0401606425702811 1112,0.0630693763139453 1113,0.106026785714286 1114,1 1115,1
+  1117,0.0414428242517268 1118,0.0334235237943658 1119,0.129762562120375 1120,0 1121,0.150758594200115 1122,0.0333333333333333 1123,0 1124,0.00117730162467624
+  1125,0 1126,0.00193967607409563 1127,0 1128,0.00133155792276964 1129,0 1130,0.0125297581756672 1131,0.0123067213632061 1132,0.0145362042336695
+  1133,0.0108049702863317 1134,0.00383141762452107 1135,0.0144323284156511 1136,0 1137,0.0677143222179635 1138,0.101960784313725 1139,0.0529193861351208 1140,0.0590385156030363
+  1141,0.0886761359177588 1142,0.0019105846388995 1143,0.0149387511204063 1144,0.128744088281661 1145,0.0830729365139852 1146,0.122722672064777 1148,0 1149,0.17156862745098
+  1150,0.0808189655172414 1151,0.0888888888888889 1152,0.00226654578422484 1153,0 1154,0 1155,0.0512914453196556 1156,1 1157,1
+  1158,0.041994750656168 1159,0.150462962962963 1160,0.208170292690562 1161,1 1162,1 1163,0.204165524801315 1164,1 1165,1
+  1166,1 1167,1 1168,1 1169,1 1170,1 1171,1 1172,0.0172562553925798 1174,1
+  1175,0.310445022174644 1176,0.177242592342038 1177,0.293044900012577 1178,0.181790091667525 1179,0.236379136634891 1180,0.0603621730382294 1181,0.0274914089347079 1182,0.0261848651479445
+  1183,0.0213295414148596 1184,0.0528885272579333 1185,1 1186,1 1187,0 1188,0 1189,1 1190,0.0519542802333946
+  1191,0.0314447430106912 1192,0.016783378667747 1193,0.0563949776548202 1194,0.0137236962488564 1195,0.0053979025293029 1196,0.00698129014241832 1197,0 1198,0.00209702222843562
+  1199,0.00203998368013056 1200,0 1201,0 1202,0.0971640729915475 1203,0.0505763349800047 1204,0.0970873786407767 1205,0.0356561506859933 1206,0.0232153221125943
+  1207,0.0301471892179464 1208,0.0559891414998303 1209,0.0562471184877824 1210,0.0994617364849052 1211,0.048443922489724 1212,0.069871201279569 1213,0.128004015812261 1214,0.0301718483536665
+  1215,0.0736762376919369 1216,0.00114116170261326 1217,0.101874490627547 1218,0.0524541026601724 1219,0.0339381281816995 1220,0.0277252678008822 1221,0.0172043010752688 1222,0.00728787090057262
+  1223,0.0934702474986835 1224,0.0427179281804832 1225,0.0996625598367731 1226,0.0724900326205147 1227,0.0214427936896921 1228,0.0808589607635207 1229,0.0699300699300699 1230,0.0445714285714286
+  1231,0.0218579234972678 1232,0.0687442713107241 1233,0.0214839254200875 1234,0.0186965811965812 1235,0.0462140063988624 1236,0 1237,0.0281456953642384 1238,0.0295629820051414
+  1239,0.0642140468227425 1240,0.038599877182209 1241,0.0579199194157643 1242,0.0132450331125828 1243,0.0755345026245039 1244,0.00322061191626409 1245,0 1246,0.0128406334712512
+  1247,0.0544662309368192 1248,1 1249,0.0888647080159594 1250,0 1251,0.00674809366354005 1252,0.129005409904286 1253,0.0996204933586338 1254,0.182441700960219
+  1255,0.105827377680044 1256,0.0572066415515557 1257,1 1258,0.0810768261964736 1260,0.240728138822729 1261,0.0836820083682008 1262,0.186210367388022 1263,0.205658447903647
+  1264,0.195986934204386 1265,0.355039542318694 1266,0.0961678566224683 1267,0.0936025943396226 1268,1 1269,1 1270,1 1271,1
+  1272,1 1273,1 1274,0 1275,0.0824175824175824 1276,0.100840336134454 1277,0.125758889852559 1278,0.117516936264344 1279,0.156968447756461
+  1280,0.0310967587609138 1281,0.0577156743620899 1282,0.0942151874882231 1283,0.0480384307445957 1284,1 1285,0 1286,0.0411240575736806 1287,0.00546567555749891
+  1288,0 1289,0.0027063599458728 1290,0 1291,0.072992700729927 1292,0.129919035963095 1293,0.0739408473221423 1294,0.1171875 1295,0.133353538414911
+  1296,0.0716112531969309 1297,0.0536407212965076 1298,0.00285143997718848 1299,1 1300,0.0608034744842562 1301,0.0263417846559104 1302,0.124164278892073 1303,0.0384763370527126
+  1304,0 1305,0 1306,0.10911074740862 1307,0.054773082942097 1308,0.0651658767772512 1309,0.121703853955375 1310,0.208768267223382 1311,0.0430371964340609
+  1312,1 1316,0.0449910017996401 1317,0.0200937709310114 1318,0 1319,1 1320,0 1321,0.0424778761061947 1322,0.0950914689367868
+  1323,0.283717105263158 1324,1 1326,0.0040061809649173 1327,0.0170842824601367 1328,0.0891029500301024 1329,0.0550964187327824 1330,0.0828856485034536 1331,0.0509994242000494
+  1332,0.0432675666320526 1333,0.00198846689202625 1334,0 1335,0.000718752246100769 1336,0 1337,0 1338,0 1339,0
+  1340,0 1341,0 1342,1 1343,0.064 1344,1 1345,0 1346,0.0024264482863209 1347,0.043424317617866
+  1348,0.0641299700726806 1349,0.00379190050053087 1350,0.00654878847413229 1351,0.0240189555000162 1352,0.107351425626932 1353,0.0847457627118644 1354,1 1355,1
+  1357,0.122927824534558 1358,0.00246624329490104 1359,0 1360,0.0974358974358974 1362,0.100569259962049 1363,0 1364,0.1981860933826 1365,0.0197784810126582
+  1366,0.0220811482197074 1367,0.0351330035133003 1368,0 1369,0 1370,0 1371,0.000739644970414201 1372,1 1373,0.000839348665435622
+  1374,0.0407701019252548 1375,0.0656574867773117 1376,1 1377,1 1378,0.0830496936691627 1379,1 1380,0.0929022668153103 1381,0.0213725955829969
+  1382,0.087719298245614 1383,0 1384,0.0618382041507836 1385,0.0203797061031857 1386,0 1387,0.0131164742917104 1388,0.0448695241468887 1389,0.048025613660619
+  1390,0 1391,0 1392,0 1393,0.0223214285714286 1394,0.0144621203693403 1395,0.0550878287080345 1396,0.0125728654703395 1397,0.0210581732034746
+  1398,0 1399,0.0024340770791075 1400,0.0221361372440509 1401,0 1402,0 1403,0.125628140703518 1404,0.00395569620253165 1405,0
+  1406,0.0286928799149841 1407,0.0606171932402645 1408,0.0861956379783205 1409,0.0563578724903135 1411,0.0798056904927134 1412,0 1413,0.0145744883087257 1414,0.0949108165603011
+  1415,0.0684416365824308 1416,0.00524148259078997 1417,0.0012853470437018 1418,0.0294659300184162 1419,0.0732779677576942 1422,0.0502627370344985 1423,0.0613737268216244 1424,0.0430570505920344
+  1425,0.0745352507891968 1426,0.142157637024167 1427,0.0879507475813544 1428,0.00147841513897102 1429,0.0269597677312319 1430,0.0238208670795617 1431,0.0627155848228285 1432,0
+  1433,0.0261898311207442 1434,0.0854486051771802 1435,0.00440852314474651 1436,0.012091376257719 1437,0.00795967100026532 1438,0.225588140509185 1439,0 1440,0.175269335906094
+  1441,1 1442,0.130065032516258 1443,0.14533258803801 1444,0.00103044979133392 1445,0.115861786117092 1446,0.0933734939759036 1447,0.115801270078446 1448,0.0256052141527002
+  1449,0.0851808634772462 1450,0 1451,1 1452,1 1454,0.119774011299435 1455,0.0896860986547085 1456,0.0377833753148615 1457,0.104903078677309
+  1458,0.0339243712683192 1459,0.109924623115578 1460,0.0865641886574681 1461,0 1462,0.00929476007900546 1463,0 1464,0.0804667069000201 1465,0.138281307926151
+  1466,0.0626869924490668 1467,0.0819604612850082 1468,0.00575456768810243 1469,0.0465597516813244 1470,0.108769544527532 1471,0.133222314737719 1472,0.000716614712100039 1473,1
+  1474,0.0230061349693252 1475,0.0611201197455407 1476,0.0381679389312977 1477,0.0110132158590308 1478,0.0906793518656162 1479,0 1480,0 1481,0.0342857142857143
+  1482,0.040356482259963 1483,0 1484,0.00387334172557374 1485,0 1486,0 1487,0.125568045922028 1488,0.138337680009071 1489,0.207607635502299
+  1490,0.139982502187227 1491,1 1492,0.0727673649393605 1493,0.113786082165529 1494,0.123663101604278 1495,0.164143306850547 1496,0.236903570236904 1497,0.0174291938997821
+  1498,0.114615807812213 1499,0.294739878834503 1500,0.18879197036683 1501,0.209631728045326 1502,0.138410893311387 1503,0.0557165143748607 1504,1 1505,0.137961726746773
+  1506,0.0457984866587017 1507,0.00541365224666568 1508,0.0028137310073157 1509,0.00559127760693318 1510,0.0569003761211303 1511,0.0412707553508014 1512,0.00237069817061124 1514,0.0621306258524019
+  1515,0.121823877479986 1516,0.130406714009038 1517,1 1518,1 1519,0 1520,0.0267304445694992 1521,1 1522,0
+  1523,0 1524,0.0245767340251229 1525,0.248005801305294 1526,0.222049084534476 1527,0.148365465213747 1528,0.0431328036322361 1530,0.155498557229881 1531,0.132575757575758
+  1532,0.0628233555062823 1533,0.144927536231884 1534,0.0056002800140007 1535,0.0412328625914854 1536,0 1537,0.000830702774547267 1538,0.158506516379007 1540,0.0915791824882734
+  1541,0.025072578516759 1542,0 1543,0 1544,0.0453149001536098 1545,0 1546,0 1547,0 1548,0.00158654608916389
+  1549,0.00123183050012318 1550,0.101337657073368 1551,0.0426687354538402 1552,0.0510715914272686 1553,0.0886243386243386 1554,0.0772753291356611 1555,0.0312927831018971 1556,0.0408897612037946
+  1557,0.0109563311942401 1558,0.0292492687682808 1559,0.000904731747037004 1560,0 1561,0.0762009939260077 1562,0.062457798784605 1563,1 1564,0.106294289287203
+  1565,0.00259942812581232 1566,0.0921962462956865 1567,0 1568,0.181713296798385 1569,0.0344362928582123 1570,0.112485939257593 1571,0.124570922378474 1572,0.0608385134241502
+  1573,0.0588730025231287 1574,1 1575,0.0834391438418284 1576,0.0510421097405359 1577,0.138238573021182 1578,1 1579,0.0428515777171796 1580,0.0805190744215134
+  1582,0.150595639469544 1583,1 1584,1 1585,1 1586,1 1587,0.188538487622923 1588,0.138377999649676 1589,0.532296650717703
+  1590,0.0755336617405583 1591,0.070778564206269 1592,0.134348410210479 1593,0.0315362667067127 1594,0.00520381613183001 1595,0.210584649487393 1596,0.0622222222222222 1597,0.0894527120435879
+  1598,0.131026373257181 1599,0.0467047223663726 1600,0.0479376810146809 1601,0.0849367308025654 1602,0.116099639944155 1603,1 1604,1 1605,0.203629032258065
+  1606,0.254284911491992 1607,0.251932267390406 1608,0.198863636363636 1609,0.237205827418752 1610,0.157407407407407 1611,1 1612,0.260400773064795 1613,0.21182400217954
+  1614,0.45411690760528 1615,0.252729478366357 1616,0.25528811086798 1617,0.225144262605241 1618,0.0854214123006834 1619,0 1620,0.00143595634692705 1621,0.0776352866754845
+  1622,0.0736469513587577 1623,0.0112485939257593 1624,0.0564481111593574 1625,0.0964489259096887 1626,0.00237981913374584 1628,0.0330147697654214 1629,0.0628733102797862 1630,0.2560706401766
+  1631,0.125131717597471 1632,0.117994100294985 1633,0.0400515918810671 1634,0.0427131385614215 1635,0.10156789271275 1636,0.161507402422611 1637,0.150653780557135 1638,0.0877095592317087
+  1639,0.0972354623450906 1640,0.114560236511456 1642,0.0784261597766848 1643,0.0745341614906832 1644,0.146520146520147 1645,0.0561419267909275 1646,0.124077800134138 1647,0.0539183787301292
+  1648,0.115573533660792 1649,0.0860621326616289 1650,0.122712594187298 1651,0.0630997765216248 1652,0.0648748841519926 1653,0.0695296523517382 1654,0.0347705146036161 1655,0.00523925951798812
+  1656,0.0109529025191676 1657,0.0369913686806412 1658,0.0375027575557026 1659,0.0335504243141899 1660,0.0742988698200084 1661,0.00245700245700246 1662,0.0401123144805455 1663,0.000607681088964511
+  1664,0.0631428862409614 1665,0.069970012851635 1667,0.0161186331399097 1668,0.0230880230880231 1669,0.0149844803596275 1670,0.0383877159309021 1671,0.144753918338824 1672,0.00498049306881381
+  1673,0.182180668224942 1674,1 1675,0.189205579138872 1676,0.111254245227778 1677,0.0743814594425305 1678,0.0840025846949137 1679,0.0534324544081775 1680,0.0118000429092469
+  1704,0.106979489449609 1705,0.06546014632268 1706,0.00367985280588776 1707,0.185649774209734 1708,1 1709,0 1710,0.00711237553342817 1711,0.0958627648839556
+  1712,0.0872554204124802 1713,0.0680823472199708 1714,0.113452188006483 1715,0.0771812080536913 1716,1 1717,0.0134348410210479 1718,0.0846891018497883 1719,0.136484008963129
+  1720,0.0970066518847007 1721,0.0696122981726772 1723,1 1725,0.0240520656479909 1726,0.117231638418079 1727,0.22766217870257 1728,0.0687285223367698 1729,0.0474444684062972
+  1731,0.10514457378896 1732,0.152671755725191 1733,0.0509683995922528 1734,0.166416416416416 1735,0.23961661341853 1736,0.166760881854155 1737,0.0923907401640195 1738,0.094673700946737
+  1739,0.00257135510413988 1740,0.0930417495029821 1741,0.000998402555910543 1742,0.105137869470343 1743,0.00443557329784875 1744,0.0853889943074004 1745,0.187291738480984 1746,0.0712166172106825
+  1747,0.123456790123457 1748,0.143388210302708 1749,0.294882621178855 1750,0.295272727272727 1751,0.288947484069435 1752,0.523926612445621 1753,0.198354558773808 1754,0.168940870695257
+  1755,0.145339652448657 1756,0.269592476489028 1757,0.0342549547345241 1758,0 1759,0 1761,0.122685533644438 1762,0.0730014360938248 1763,0.089736399326977
+  1764,0.106897627965044 1765,0.162109375 1766,0 1767,0 1768,0.0655703580349709 1770,0.326797385620915 1769,0.129340643891466 1771,0.0287868403015764
+  1772,0.101389410439354 1773,0 1774,0.0703252543011428 1775,0.0935710252480439 1776,0.0744719814430472 1777,0.065832074249946 1778,0.0112531147013906 1779,0.0315606753984535
+  1780,0 1781,0 1782,0 1783,0.0232712765957447 1784,0.0288140734000607 1785,0.0845469651060502 1786,0.107683679192372 1787,0
+  1788,0.0500963391136802 1789,0.0469625814270565 1790,0 1791,0.00164948453608247 1792,0.246271245230662 1793,0.0652125028108837 1794,0.0562878517990737 1796,0.0288540807914262
+  1795,1 1797,0.0239234449760766 1798,0.0763229308005427 1799,0.131374874555241 1800,0.0788054749066777 1801,1 1802,1 1803,1
+  1818,1 1819,0.00183385292499542 1820,0 1821,0.0119534734035217 1822,0.09902130109384 1823,0 1824,0.143328521344607 1826,0.0981864387201109
+  1827,0.0869630973986691 1828,0.292648108493933 1829,0.0901762535865555 1830,0.155963302752294 1831,0.236589365190911 1832,0.138841855739925 1833,0.260125123477116 1834,0.093686507637896
+  1835,1 1836,0.0514453699167075 1837,0.0880957759204879 1838,0.19391507856904 1839,0.00050612410162972 1840,0.123910050481872 1841,0.156893157549365 1842,0.192880442490427
+  1843,0.147451526761872 1844,0.125373134328358 1845,0.110403397027601 1846,0.0452961672473868 1847,0.118351338333448 1848,0.0523477157360406 1849,0.00403388463089956 1850,0.0517480752240313
+  1851,0 1852,0.0745712155108128 1853,0.000847457627118644 1854,0.0700562572975268 1855,1 1856,1 1857,0.0676554774915431 1858,0.0893486950387961
+  1859,0.0794251134644478 1860,0.0738477209065444 1861,0.0699523052464229 1862,0.109295904279798 1863,0.103824557686196 1864,0.25172231054584 1865,0.12735274838468 1866,0.0171880371261602
+  1867,0.0362239297475302 1868,0.0887319090282564 1869,0.123282846072561 1871,0.152746181345466 1873,1 1874,0.0596722479515497 1875,0.123062170369186 1876,0.119606003752345
+  1877,0.0343897505057316 1878,0.0202083009482357 1895,0.030966600309666 1896,0.000685871056241427 1897,0.00302091987010045 1898,0 1899,0.0829931972789116 1900,0.0322617160968983
+  1901,1 1902,0.0201672697075746 1903,1 1904,0.153879973620576 1905,0 1906,1 1907,0.107767385115901 1908,0.0809716599190283
+  1909,0.0824773187373472 1910,0.0625651720542231 1911,0.139868223326783 1912,0.238979692917286 1913,0.174825174825175 1914,0.146303501945525 1916,0.150891632373114 1917,1
+  1918,0 1919,0.00663423264042459 1920,0.16594408730752 1921,0.120043652237177 1922,0.0618069441919651 1923,0.0142673705236125 1924,0.14475271411339 1925,0.180108383806184
+  1926,0.00236593059936909 1927,0.178536868589123 1928,0.215736040609137 1929,0.15257244234181 1930,0.363372093023256 1931,0.299264963248162 1932,0.0880881767075384 1933,0.00393855848759354
+  1934,0.238996687174633 1935,0.165167493796526 1936,0.1263559423054 1937,0.164036286814962 1938,0.108794197642792 1939,1 1940,0.0607466313231721 1941,0.002255299954894
+  1942,1 1943,0.0531914893617021 1944,0.134868919533263 1945,0.124779601247796 1946,0.167257982767359 1947,0.0448207171314741 1948,1 1949,1
+  1950,0.00233245218473021 1951,0.144192679448582 1952,1 1953,0.0606980273141123 1954,0.0544880986521365 1955,1 1956,0.105164208918395 1957,0.33097441480675
+  1958,0.288037166085947 1959,0.354231510300874 1960,0.331686661961891 1961,0.281433288974321 1962,0.16655031415179 1963,0.0505902192242833 1964,0.0567375886524823 1965,0.232740457641237
+  1966,1 1967,1 1968,0.132132132132132 1969,0.109919571045576 1970,0.0871759577884836 1971,0.133379194374379 1972,0.10566989985017 1973,0.139681005316578
+  1974,0.0993929294131651 1976,0.117284564158632 1977,0.105039787798408 1978,0.184129480374812 1979,0.144547633313361 1981,1 1982,1 1983,1
+  1984,0.113905492274727 1985,0.233791065531027 1986,0.235220767443179 1987,0.360182518365101 1988,0.354337580729621 1989,0.382947081422729 1990,0.305989583333333 1991,0.247566652560305
+  1992,0.20192070918493 1993,0.40585495675316 1994,0.25501477219717 1995,0.204428096484403 1996,0.190231362467866 1997,0.161865750528541 1998,0.011214953271028 1999,0.00285673475217826
+  2000,0.00237247924080664 2001,1 2002,0.143612404324154 2003,0.123037759864234 2004,0.179462417511669 2005,0.123857078010505 2006,0.193740685543964 2007,0.166339674144843
+  2009,0.276834239130435 2010,0.0604432505036938 2011,0.0904262953925649 2012,0.0348335729293376 2013,0.0731139913592556 2014,0.0787456445993031 2015,0.0173651308173188 2016,0.0398698982268387
+  2017,1 2018,0.164467393383056 2019,0.15236388079767 2020,0.118188795088258 2021,1 2022,0.0367842399967303 2023,0.0580616346583296 2024,0.142485271955062
+  2025,0.0894700619408121 2026,0.0881365416899832 2027,0.0203527815468114 2028,0.0918398072869618 2029,0 2030,0 2031,0.011153245594468 2032,0.00970080669866231
+  2033,0.175082934021379 2034,0.189168573607933 2035,0.121979111077228 2036,0.0929512006196747 2037,0.0902468196150919 2038,1 2041,0.000948676596148373 2042,0
+  2043,0 2044,0 2045,0 2046,0.0150432493418578 2047,0.0299257840555423 2048,0.0194339851815863 2049,0.0091424392027793 2050,0.0183038438071995
+  2051,0.0292645360030805 2052,0.042590109630097 2053,0.00551267916207277 2054,0 2055,0.000671546571754751 2056,0 2057,0.0382432765852455 2058,0.133312359904047
+  2060,0.219498811048107 2063,0.263582571274879 2064,0.290275761973875 2065,1 2067,0.0977267898874017 2068,0.0251109065037248 2069,0.0594766058683584
+"
 
-expect_sim_outputs <- function(run, uniq, cell, recom_rate = NULL, gmax = GMAX, hpop = HPOP) {
-  expect_equal(run$status, 0, info = run$tail)
-  expect_true(any(grepl("simulation completed", run$log, fixed = TRUE)), info = run$tail)
-  if (run$status != 0) return(invisible(NULL))
-  for (f in c(run$sim, run$pdf, run$ana)) expect_true(file.exists(f), info = basename(f))
-  if (!file.exists(run$sim)) return(invisible(NULL))
-  e <- load_rda(run$sim)
-  recs <- c("rec.host", "rec.transposon", "rec.offspring", "rec.gRecom", "rec.tpnCount")
-  expect_true(all(c("hOst", "sim.df", recs) %in% ls(e)))
-  for (m in recs) expect_equal(dim(e[[m]]), c(gmax + 1, hpop), info = m)
-  expect_named(e$sim.df, c("familyTree", "hARecomRate", "transposon", "tpnFail", "host"))
-  expect_equal(nrow(e$sim.df), hpop)
-
-  # familyTree "a;b": generation 0 points at genome templates, later generations at the 2 x hpop parent genomes
-  ft <- e$rec.offspring
-  expect_true(all(grepl("^[0-9]+;[0-9]+$", ft)), info = "familyTree entries look like 'a;b'")
-  pairs <- matrix(as.integer(unlist(strsplit(as.vector(ft), ";", fixed = TRUE))), nrow = 2)
-  first <- rep(seq_len(nrow(ft)), times = ncol(ft)) == 1
-  expect_true(all(pairs[, first] >= 1 & pairs[, first] <= length(e$hOst)))
-  expect_true(all(pairs[, !first] >= 1 & pairs[, !first] <= 2 * hpop))
-  if (identical(cell, "haploid")) {
-    expect_true(all(pairs[1, ] == pairs[2, ]), info = "haploid offspring copy one parent genome")
-  }
-
-  # transposon records parse into the 11 template fields and stay consistent
-  tr <- e$rec.transposon
-  tf <- tpn_fields(as.vector(tr))
-  expect_true(length(tf$n) > 0 && all(tf$n == 11), info = "each transposon has 11 '!'-separated fields")
-  if (!is.null(tf$m)) {
-    expect_true(all(grepl("^[gi][01]MOCK_[0-9]{4}$", tf$m[, 1])), info = "gene field = g|i + copy 0|1 + locus tag")
-    expect_true(all(tf$m[, 5] == uniq), info = "uniqID")
-    expect_true(all(as.numeric(tf$m[, 6]) == tpn_tmpl$size[match(uniq, tpn_tmpl$uniqID)]), info = "size")
-  }
-  future <- vapply(seq_len(nrow(tr)), function(r) {
-    m <- tpn_fields(tr[r, ])$m
-    !is.null(m) && any(as.numeric(m[, 3]) > r - 1)
-  }, logical(1))
-  expect_false(any(future), info = "a transposon cannot carry a later generation than its record")
-  # homologous repair restores only the jumped-from site and recombination replaces the recipient's segment,
-  # so no host should ever hold the same transposon twice
-  dups <- same_spot_duplicates(tr)
-  expect_true(length(dups) == 0, info = paste(length(dups), "host records repeat a transposon, e.g.", dups[1]))
-
-  g <- e$rec.gRecom
-  expect_true(all(is.finite(g) & g >= 0))
-  if (!is.null(recom_rate)) expect_true(all(abs(g - recom_rate) < 1e-12), info = "fixed homologous repair rate")
-
-  # the analysis runs inside the generation loop; the saved one must cover every recorded generation
-  if (file.exists(run$ana)) {
-    a <- load_rda(run$ana)
-    expect_true(all(c("gEnealogy", "rec.hostTraject", "tpn.dom", "tpn.gene", "g.Fit", "g.Rec", "g.Fit.ref") %in% ls(a)))
-    expect_equal(unname(rowSums(a$gEnealogy)), rep(1, gmax + 1), tolerance = 1e-8)
-    expect_equal(unname(rowSums(a$rec.hostTraject)), rep(1, gmax + 1), tolerance = 1e-8)
-  }
-  invisible(e)
-}
-
-expect_scenario <- function(name) {
-  it <- integration()
-  skip_if_not(isTRUE(it$ok[[name]]), paste("no template rows match scenario", name))
-  k <- it$index[[name]]
-  h <- it$tab$host[k]
-  run <- run_sim(sb_main, k)
-  fixed_rate <- if (identical(host_tmpl$hAReomH1[h], "fixed")) host_tmpl$homologousAutoRecom[h] else NULL
-  expect_sim_outputs(run, it$tab$transposon[k], host_tmpl$cell[h], recom_rate = fixed_rate)
-  invisible(run)
-}
-
-test_that("end to end: simulate.r's default scenario", {
+##### 4. Tests #####
+test_that("189256: none of sim.df$transposon is an empty string or NA", {
   skip_integration()
-  expect_scenario("default")
+  run <- run_case(189256)
+  expect_true(run$ok, info = run$tail)
+  if (!run$ok) return(invisible())
+  tr <- run$state$transposon
+  expect_false(anyNA(tr), info = paste(ended(run$state), "| NA for hosts", paste(which(is.na(tr)), collapse = ", ")))
+  expect_true(all(nzchar(tr[!is.na(tr)])),
+              info = paste(ended(run$state), "| empty for hosts", paste(which(!is.na(tr) & !nzchar(tr)), collapse = ", ")))
 })
 
-test_that("end to end: fixed rates, haploid host, recombination and homologous repair", {
+test_that("189253: i.cp has length 0 and reCom is FALSE", {
   skip_integration()
-  expect_scenario("fixed")
+  run <- run_case(189253)
+  expect_true(run$ok, info = run$tail)
+  if (!run$ok) return(invisible())
+  expect_identical(run$state$i.cp, 0L, info = paste(ended(run$state), "|", ABSENT))
+  expect_identical(run$state$reCom, FALSE, info = ended(run$state))
 })
 
-test_that("end to end: diploid host", {
+test_that("189220: i.mv has length 0 and reCom is FALSE", {
   skip_integration()
-  expect_scenario("diploid")
+  run <- run_case(189220)
+  expect_true(run$ok, info = run$tail)
+  if (!run$ok) return(invisible())
+  expect_identical(run$state$i.mv, 0L, info = paste(ended(run$state), "|", ABSENT))
+  expect_identical(run$state$reCom, FALSE, info = ended(run$state))
 })
 
-test_that("end to end: charlesworth jump rate and evolving copy rate", {
+test_that("186664: i.mv and i.cp both have length 0", {
   skip_integration()
-  expect_scenario("h1_rules")
-})
-
-test_that("end to end: genotoxic perturbation generations", {
-  skip_integration()
-  expect_scenario("genotoxic")
-})
-
-test_that("end to end: transposons that copy but never jump (jumpRate 0)", {
-  skip_integration()
-  expect_scenario("no_jumps")
-})
-
-test_that("end to end: copies restricted to the terminus direction", {
-  skip_integration()
-  expect_scenario("copy_dir")
-})
-
-test_that("end to end: copy direction in generations with copies but no jumps", {
-  skip_integration()
-  expect_scenario("copy_dir_copies_only")
-})
-
-test_that("end to end: copy direction in generations with jumps but no copies", {
-  skip_integration()
-  expect_scenario("copy_dir_jumps_only")
-})
-
-test_that("end to end: very low recombination rate (recom 0.0001)", {
-  skip_integration()
-  expect_scenario("recom_tiny")
-})
-
-test_that("end to end: recombination replaces the recipient's segment (repair off)", {
-  skip_integration()
-  run <- expect_scenario("recomb_only")     # includes the same-spot duplicate check
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  expect_true(any(nzchar(load_rda(run$sim)$rec.host[-1, ])),
-              info = "no recombination was recorded, so the duplicate check was not exercised")
-})
-
-test_that("end to end: homologous repair restores only the jumped-from site (recombination off)", {
-  skip_integration()
-  run <- expect_scenario("repair_only")     # includes the same-spot duplicate check
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  m <- tpn_fields(as.vector(load_rda(run$sim)$rec.transposon[-1, ]))$m
-  expect_true(!is.null(m) && any(as.numeric(m[, 3]) > 0),
-              info = "no transposon moved, so repairs were not exercised")
-})
-
-test_that("end to end: offspring carry the transposons of the parent genomes recorded in familyTree", {
-  skip_integration()
-  run <- expect_scenario("inert")           # transposons never move and the host never recombines
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  e <- load_rda(run$sim)
-  bad <- character(0)
-  for (r in 2:nrow(e$rec.offspring)) {
-    for (j in seq_len(ncol(e$rec.offspring))) {
-      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
-      child <- chrom_keys(e$rec.transposon[r, j])
-      for (slot in 1:2) {
-        h <- (k[slot] - 1) %% HPOP + 1
-        cp <- (k[slot] - 1) %/% HPOP
-        if (!identical(child[[slot]], chrom_keys(e$rec.transposon[r - 1, h])[[cp + 1]])) {
-          bad <- c(bad, sprintf("generation %d host %d copy %d vs parent genome %d (host %d, copy %d)",
-                                r - 1, j, slot - 1, k[slot], h, cp))
-        }
-      }
-    }
-  }
-  expect_true(length(bad) == 0, info = paste(length(bad), "mismatches, e.g.", bad[1]))
-})
-
-test_that("end to end: recombination copies donor transposons into haploid recipients", {
-  skip_integration()
-  run <- expect_scenario("hgt")             # inert transposons, haploid host recombining, repair off
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  e <- load_rda(run$sim)
-  gained <- 0
-  foreign <- character(0)
-  for (r in 2:nrow(e$rec.offspring)) {
-    pool <- unique(unlist(lapply(e$rec.transposon[r - 1, ], function(cell) unlist(copy_keys(cell)))))
-    for (j in seq_len(ncol(e$rec.offspring))) {
-      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
-      new <- setdiff(unlist(copy_keys(e$rec.transposon[r, j])), genome_keys(e$rec.transposon[r - 1, ], k[1]))
-      gained <- gained + length(new)
-      foreign <- c(foreign, setdiff(new, pool))
-    }
-  }
-  expect_gt(gained, 0)                      # transposons the parent genome did not carry arrived from donors
-  expect_true(length(foreign) == 0, info = paste("transposons found in no host of the previous generation, e.g.",
-                                                 foreign[1]))
-})
-
-test_that("end to end: gene conversion copies the homolog's transposons in diploid hosts", {
-  skip_integration()
-  run <- expect_scenario("conversion")      # inert transposons, diploid host recombining
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  e <- load_rda(run$sim)
-  gained <- 0
-  foreign <- character(0)
-  for (r in 2:nrow(e$rec.offspring)) {
-    for (j in seq_len(ncol(e$rec.offspring))) {
-      k <- as.integer(strsplit(e$rec.offspring[r, j], ";", fixed = TRUE)[[1]])
-      parents <- lapply(k, function(g) genome_keys(e$rec.transposon[r - 1, ], g))
-      child <- copy_keys(e$rec.transposon[r, j])
-      for (cp in 1:2) {
-        new <- setdiff(child[[cp]], parents[[cp]])
-        gained <- gained + length(new)
-        foreign <- c(foreign, setdiff(new, parents[[3 - cp]]))   # must come from the homolog
-      }
-    }
-  }
-  expect_gt(gained, 0)
-  expect_true(length(foreign) == 0, info = paste("transposons not taken from the homolog, e.g.", foreign[1]))
-})
-
-test_that("end to end: without repair, a jump moves a transposon and leaves its old site empty", {
-  skip_integration()
-  run <- expect_scenario("jumps_no_repair")  # jumps only, repair rate 0, no recombination
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  ch <- count_changes(load_rda(run$sim))
-  expect_true(sum(ch[, "placed"]) > 0, info = "no transposon jumped, so the check was not exercised")
-  expect_true(all(ch[, "change"] == 0),
-              info = paste(sum(ch[, "change"] != 0), "host records gained or lost transposons although only jumps happened"))
-})
-
-test_that("end to end: a repaired jump restores the homolog's transposon at the old site", {
-  skip_integration()
-  run <- expect_scenario("jumps_full_repair")  # jumps only, repair rate 1; haploid, so the homolog always carries it
-  skip_if(is.null(run) || run$status != 0 || !file.exists(run$sim), "run failed")
-  ch <- count_changes(load_rda(run$sim))
-  expect_true(sum(ch[, "placed"]) > 0, info = "no transposon jumped, so the check was not exercised")
-  expect_true(all(ch[, "change"] == ch[, "placed"]),
-              info = "each jump must add exactly one transposon: the copy restored from the homolog")
-})
-
-test_that("end to end: jumps and copies land at positions spread over the genome", {
-  skip_integration()
-  it <- integration()
-  for (name in c("no_jumps", "jumps_no_repair")) {                 # copies only; jumps only
-    skip_if_not(isTRUE(it$ok[[name]]), paste("no template rows match scenario", name))
-    run <- run_sim(sb_main, it$index[[name]])
-    skip_if(run$status != 0 || !file.exists(run$sim), paste("the", name, "run failed (see its own test)"))
-    m <- tpn_fields(as.vector(load_rda(run$sim)$rec.transposon[-1, ]))$m
-    expect_false(is.null(m), info = paste(name, ": no transposons recorded"))
-    if (is.null(m)) next
-    placed <- m[as.numeric(m[, 3]) > 0, , drop = FALSE]           # stamped after generation 0: jumped or copied
-    expect_true(nrow(placed) > 0, info = paste(name, ": nothing jumped or copied"))
-    expect_true(length(unique(placed[, 1])) > 5,
-                info = paste(name, ": new positions fall in only", length(unique(placed[, 1])), "genes or gaps"))
-  }
-})
-
-test_that("end to end: evolved rates are carried by transposons that move; unmoved ones keep the template rate", {
-  skip_integration()
-  it <- integration()
-  skip_if_not(isTRUE(it$ok[["h1_rules"]]), "no template row with an evolving copy rate")
-  k <- it$index[["h1_rules"]]
-  run <- run_sim(sb_main, k)
-  skip_if(run$status != 0 || !file.exists(run$sim), "the h1_rules run failed (see its own test)")
-  m <- tpn_fields(as.vector(load_rda(run$sim)$rec.transposon[-1, ]))$m
-  skip_if(is.null(m), "no transposons recorded")
-  rate <- tpn_tmpl$copyRate[match(it$tab$transposon[k], tpn_tmpl$uniqID)]
-  moved <- as.numeric(m[, 3]) > 0                       # generation stamp > 0: jumped or copied since the start
-  expect_true(any(abs(as.numeric(m[moved, 9]) - rate) > 1e-9), info = "no moved transposon carries an evolved rate")
-  expect_true(all(abs(as.numeric(m[!moved, 9]) - rate) < 1e-12), info = "an unmoved transposon's rate changed")
-})
-
-test_that("end to end: chromosome copies left without transposons (one transposon per host)", {
-  skip_integration()
-  run <- run_sim(sb_extra("sparse"), 1)
-  expect_equal(run$status, 0, info = run$tail)
-  expect_true(any(grepl("simulation completed", run$log, fixed = TRUE)), info = run$tail)
-  if (run$status == 0 && file.exists(run$sim)) {
-    dups <- same_spot_duplicates(load_rda(run$sim)$rec.transposon)
-    expect_true(length(dups) == 0, info = paste(length(dups), "host records repeat a transposon, e.g.", dups[1]))
-  }
-})
-
-test_that("end to end: a host population eliminated in generation 1 finishes cleanly", {
-  skip_integration()
-  run <- run_sim(sb_extra("lethal"), 1)
-  expect_equal(run$status, 0, info = run$tail)
-  expect_true(any(grepl("Host population eliminated", run$log, fixed = TRUE)), info = run$tail)
-  # only generation 0 is recorded, so simulate.r runs no analysis; any analysis written must still be consistent
-  if (file.exists(run$ana)) {
-    a <- load_rda(run$ana)
-    expect_equal(unname(rowSums(a$gEnealogy)), rep(1, nrow(a$gEnealogy)), tolerance = 1e-8)
-  }
-})
-
-test_that("end to end: simulate.r reads the parameter file in its first argument, wherever it is", {
-  skip_integration()
-  it <- integration()
-  skip_if_not(isTRUE(it$ok[["fixed"]]), "no template rows for the fixed scenario")
-  k <- it$index[["fixed"]]
-  h <- it$tab$host[k]
-  alt_dir <- file.path(sb_main$root, "alt")
-  dir.create(alt_dir, showWarnings = FALSE)
-  alt <- utils::read.csv(file.path(sb_main$raw, "input.csv"), header = TRUE)
-  alt$Value[alt$Type == "host organism constant population size"] <- "12"
-  alt$Value[alt$Type == "host organism constant generation number"] <- "2"
-  utils::write.csv(alt, file.path(alt_dir, "params.csv"), row.names = FALSE)
-  run <- run_sim(sb_main, k, seed_index = 2L, input = "../alt/params.csv")   # templates still come from ../raw
-  expect_sim_outputs(run, it$tab$transposon[k], host_tmpl$cell[h], gmax = 2, hpop = 12,
-                     recom_rate = host_tmpl$homologousAutoRecom[h])
+  run <- run_case(186664)
+  expect_true(run$ok, info = run$tail)
+  if (!run$ok) return(invisible())
+  expect_identical(run$state$i.mv, 0L, info = paste(ended(run$state), "|", ABSENT))
+  expect_identical(run$state$i.cp, 0L, info = paste(ended(run$state), "|", ABSENT))
 })
