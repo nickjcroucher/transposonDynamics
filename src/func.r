@@ -76,7 +76,7 @@ gIn = function(){
   gFf$recombination = ifelse(gFf$recombination>0, ifelse(as.numeric(row.names(gFf))>nG, 1, 0), NA)
 
   ## Initial transposon copy number
-  tPn.pop = rpois(n = xIn("host organism constant population size"), lambda = xIn("transposon population size per genome mean"))
+  tPn.pop = rpois(n = xIn("host genome variation"), lambda = xIn("transposon population size per genome mean"))
   while(any(tPn.pop < 1)){ tPn.pop[tPn.pop < 1] = rpois(n = sum(tPn.pop < 1), lambda = xIn("transposon population size per genome mean")) }
 
   return(list(gene = gFf, transposon.titre = tPn.pop, numGene = nG, genome = gEnome))
