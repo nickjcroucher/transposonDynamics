@@ -8,7 +8,7 @@
 # date: 20260623, 20261006
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "186661")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "186664")}
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -57,8 +57,8 @@ ini.tPn$newLoc = apply(ini.tPn, 1, FUN = function(x){return(tPn.x(x[2]))})
 
 # Genotypes
 fTree = as.data.frame(matrix(rep(sample(seq_len(length(hOst)), hPop * ifelse(host.0$cell=="haploid", 1, 2), replace = T), ifelse(host.0$cell=="haploid", 2, 1)), ncol = 2))
-fTree$V1.tpn = ini.tPn$newLoc #[match(fTree$V1, ini.tPn$host)] # (transposon according to genotype)
-fTree$V2.tpn = tPn.flat(x = ini.tPn$newLoc, ori = 0) #[match(fTree$V2, ini.tPn$host)]
+fTree$V1.tpn = ini.tPn$newLoc[match(fTree$V1, ini.tPn$host)] # (transposon according to genotype)
+fTree$V2.tpn = tPn.flat(x = ini.tPn$newLoc, ori = 0)[match(fTree$V2, ini.tPn$host)]
 sim.df$familyTree = paste(fTree[,1], fTree[,2], sep = ";")
 sim.df$hARecomRate = host.0$homologousAutoRecom
 sim.df$transposon = paste(fTree[,3], fTree[,4], sep = ";")
