@@ -8,7 +8,7 @@
 # date: 20260623, 20261006
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "186664")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "190117")}
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -126,8 +126,7 @@ repeat{
   fTree$har = h1.mod((sim.df$hARecomRate[s0.tpnSeg$host[fTree$V1]] + sim.df$hARecomRate[s0.tpnSeg$host[fTree$V2]]) / 2, host.0$hAReomH1)
   # 6 Inherit appropriate parameters
   sim.df$familyTree = paste(fTree[,1], fTree[,2], sep = ";")
-  sim.df$transposon = paste(fTree[,3], fTree[,4], sep = ";")
-  sim.df$transposon[sim.df$transposon == ";"] = ""
+  sim.df$transposon = gsub("^;","", gsub(";$","", paste(fTree[,3], fTree[,4], sep = ";")))
   if(host.0$recom == 0 & any(sim.df$transposon=="")){stop("Transposon error on reproduction step")}
   sim.df$hARecomRate = fTree$har
   sim.df[,4:5] = ""
@@ -135,7 +134,7 @@ repeat{
   ##### Transposon activating stage #####
   cat(" Transposons;")
   # 1 Set transposon players
-  s0.tpn = strsplit(gsub("^;$","", sim.df$transposon), ";")
+  s0.tpn = strsplit(sim.df$transposon, ";")
   s0.tpnLen = lengths(s0.tpn)
   if(sum(s0.tpnLen)==0){ eLim = -1; break }
   s0.tpn = data.frame(tpn = unlist(s0.tpn), host = rep(seq_len(length(s0.tpn)), s0.tpnLen), fitness = 1)

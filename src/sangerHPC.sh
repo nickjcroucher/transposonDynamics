@@ -27,7 +27,7 @@ else
     while (( $(jobs -rp | wc -l) >= lIm ));do
       wait -n
     done
-    bash sC.sh ${i} 1> ../work/pj02-${i}.txt &
+    bash sC.sh ${i} > ../work/pj02-${i}.txt 2>&1 &
     echo -e "`date`: Submitted ${i}"
   done
 fi
