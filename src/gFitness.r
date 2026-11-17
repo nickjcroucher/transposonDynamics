@@ -4,27 +4,39 @@
 # desc: quantify gene fitness
 # in: Rscript gFitness.r [../path/2/input.csv] [../path/2/tnseq.csv]
 # out: data/gFitness.r
-# arg: 1
+# arg: 2
 # date: 20260811
 
 argv = (commandArgs(T))
-if(length(argv) < 2){argv=c("../data/input.csv", "../data/tnseq.csv", 1)}
+if(length(argv) < 2){argv=c("../raw/input.csv", "../data/tnseq.csv")}
 
 source("func.r")
 # library(glmmTMB)
-inFile = inParams(argv[1])
+inFile = gIn()
 
 a = read.csv(argv[2], header = T)
+a$count[is.na(a$count)] = 0
 a$length = inFile$gene$length[match(a$locus_tag, substr(inFile$gene$locus_tag, 2, nchar(inFile$gene$locus_tag)))]
-# a$density = a$count/a$length
-a$fitness = 1
-for(i in seq_len(nrow(a))){
-  i0 = rpois(10, a$length[i])
-  if(is.na(a$count[i])){a$count[i] = mean(i0)}
-  if(t.test(rnorm(10, a$count[i], .0001), i0)$p.value < .05){
-    a$fitness[i] = min(a$count[i]/mean(i0), 1)
-  }
-};rm(i, i0)
+a$density = a$count/a$length
+
+##### Essential genes definition #####
+a$expNum = round(mean(a$density) * a$length, 0)
+a$pois = apply(a, 1, FUN = function(x){poisson.test(as.numeric(x[2]), r = as.numeric(x[5]), alternative = "less")$p.value})
+a$p.adj = p.adjust(a$pois, method = "BH")
+
+# a0 = quantile(a$p.adj, probs = ifelse(xIn("essential gene scheme") == "strict", .1, ifelse(xIn("essential gene scheme") == "core", .5, .25)))
+
+##### Fitness definition #####
+a$fitness = a$p.adj
+
+# a$fitness = 1
+# for(i in seq_len(nrow(a))){
+#   i0 = rpois(10, a$length[i])
+#   if(is.na(a$count[i])){a$count[i] = mean(i0)}
+#   if(t.test(rnorm(10, a$count[i], .0001), i0)$p.value < .05){
+#     a$fitness[i] = min(a$count[i]/mean(i0), 1)
+#   }
+# };rm(i, i0)
 
 # g0 = glmmTMB(count ~ length + locus_tag, data = a, family = poisson(link = "identity"), ziformula = ~1)
 # g0 = as.data.frame(summary(g0)$coefficient$cond)

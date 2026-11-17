@@ -2,7 +2,7 @@
 # author: ph-u
 # script: sangerHPC.sh
 # desc: HPC script for transposon model
-# in: bsub sangerHPC.sh
+# in: bsub < sangerHPC.sh
 # out: NA
 # arg: 0
 # date: 20260702
@@ -13,6 +13,8 @@ mkdir -p ../{data,work}
 
 [[ -f transposondynamics_latest.sif ]] && rm transposondynamics_latest.sif
 apptainer pull docker://ghcr.io/nickjcroucher/transposondynamics:latest
+
+apptainer run --bind ${PWD}/../data:/data --pwd /src transposondynamics_latest.sif Rscript gFitness.r ../data/input.csv ../data/tnseq.csv
 
 # if [[ `command -v bsub >/dev/null 2>&1` ]];then
 if [[ $USER != "ubuntu" ]];then
