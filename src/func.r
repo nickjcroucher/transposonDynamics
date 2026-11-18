@@ -58,9 +58,11 @@ gIn = function(){
   gFf$length[g0-1] = gFf$length[g0-1] + gFf$interLength[g0]; gFf$interLength[g0] = 0
 
   ## Gene fitness
-  g0 = read.csv(xIn("gene fitness"), header = TRUE)
-  gFf$fitness = g0$fitness[match(gFf$locus_tag, g0$locus_tag)]
-  gFf$fitness[is.na(gFf$fitness)] = 0 # assume essential genes cannot generate transposon library mutants
+  if(file.exists(xIn("gene fitness"))){
+    g0 = read.csv(xIn("gene fitness"), header = TRUE)
+    gFf$fitness = g0$fitness[match(gFf$locus_tag, g0$locus_tag)]
+    gFf$fitness[is.na(gFf$fitness)] = 0 # assume essential genes cannot generate transposon library mutants
+  }else{gFf$fitness = 1}
   if(xIn("essential gene scheme") != "strict"){
     g1 = quantile(gFf$fitness, probs = c(.25,.5))
     if(xIn("essential gene scheme") == "relaxed"){gFf$fitness[gFf$fitness < g1[1]] = 0}else if(xIn("essential gene scheme") == "core"){gFf$fitness[gFf$fitness < g1[2]] = 0}
