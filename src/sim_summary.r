@@ -34,13 +34,17 @@ plot(x = seq_len(gEn)-1, y = sDi, type = "l", xlim = c(0, gEn.max), ylim = c(0, 
 
 ##### Transposon parameters mapping #####
 # cat(date(),": Distribution of transposons in the population",argv[3],"-",argv[5],"\n")
-tIh = apply(rec.tpnCount0, 1, density)
-i0 = i1 = c(); for(i in seq_len(length(tIh))){
-  i0 = range(i0, tIh[[i]]$x)
-  i1 = range(i1, tIh[[i]]$y)
-};rm(i)
-plot(x = i0, y = i1, col = "#00000000", xlab = "Transposon count", ylab = "Density", main = paste0("Distribution of transposon copy number per generation [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
+# tIh = apply(rec.tpnCount0, 1, density)
+# i0 = i1 = c(); for(i in seq_len(length(tIh))){
+#   i0 = range(i0, tIh[[i]]$x)
+#   i1 = range(i1, tIh[[i]]$y)
+# };rm(i)
+# plot(x = i0, y = i1, col = "#00000000", xlab = "Transposon count", ylab = "Density", main = paste0("Distribution of transposon copy number per generation [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
 cBr = rainbow(ceiling(nrow(rec.tpnCount0)/.7))[seq_len(nrow(rec.tpnCount0))]
+
+a.ct = data.frame(generation = seq_len(nrow(rec.tpnCount0))-1, tpncount = as.numeric(rec.tpnCount0))
+beeswarm(tpncount ~ generation, data = a.ct, col = cBr[a.ct$generation + 1], corral = "wrap", ylab = "Transposon count", xlab = "Generation", main = paste0("Distribution of transposon copy number per generation [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
+
 for(i in seq_len(length(tIh))){
   # hist(rec.tpnCount0[i,], border = "", add = TRUE)
   lines(tIh[[i]], lwd = 2, col = cBr[(i %% length(cBr)) + 1])

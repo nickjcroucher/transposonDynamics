@@ -7,7 +7,7 @@ host organism constant generation number,200,
 host organism constant population size,1000,
 host genome variation,3,any positive number
 host genetic variation,10,"1-26: 1 = homogeneous initial population; max 52 variations per gene; can specify variation for each gene using separator "";"""
-transposon population size per genome mean,5,high number indicates more transposons detected per genome
+transposon population size per genome mean,3,high number indicates more transposons detected per genome
 percentage transposon perturbation genotoxic,0.1,
 percentage chance transposon perturbation boost,80,
 percentage amplitude transposon perturbation boost,150,
