@@ -43,7 +43,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          packages: any::testthat, any::withr
+          packages: any::testthat, any::withr, any::beeswarm
 
       - name: Run test_simulation.r
         env:
