@@ -11,6 +11,7 @@
 #source("func.r")
 src.url = "https://raw.githubusercontent.com/ph-u/snippet_ph-u/refs/heads/master/"
 source(paste0(src.url, "colour.r"))
+library(beeswarm)
 
 ##### f: Decode transposon annotation (from func.r) #####
 #tPn.io = function(x, ref = f.tpn){
