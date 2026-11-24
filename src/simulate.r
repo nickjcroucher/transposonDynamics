@@ -8,7 +8,7 @@
 # date: 20260623, 20261006
 
 argv=(commandArgs(T))
-if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "190117")}
+if(length(argv) < 5){argv=c("../raw/input.csv", "../raw/seed.csv", "1", "../raw/scenario.csv", "186625")}
 eLim = 1 # tag for transposon survival
 
 ##### env set #####
@@ -43,7 +43,7 @@ colnames(sim.df) = sim.df.col
 ini.tPn = data.frame(tpn = sample(tPn$ini, sum(geneIn$transposon.titre), replace = T), loc = runif(n = sum(geneIn$transposon.titre), max = .5), host = rep(seq_len(length(geneIn$transposon.titre)), geneIn$transposon.titre), newLoc = NA)
 
 ## 1 Check no essential genes are hit
-g0 = paste0("g", geneIn$gene$locus_tag[which(geneIn$gene$fitness == 0)])
+g0 = paste0("g", geneIn$gene$locus_tag[which(geneIn$gene$fitness < .01)]) # assume hosts with 1% gene fitness is practically doomed
 repeat{
   ini.tPn = tPn.newloc(ini.tPn)
   ini.tPn$gene = tPn.io(ini.tPn$newLoc)$gene %in% g0
@@ -98,20 +98,28 @@ repeat{
   s0.tpn$fitness = ifelse(s0.tpn$fitness < 0, 0, s0.tpn$fitness)
 
   # 3 Aggregate host fitness
-  s0.fit = aggregate(fitness ~ host, data = s0.tpn, FUN = prod)
-  if(nrow(s0.fit) != hPop){
-    hPop.0 = seq_len(hPop)[!(seq_len(hPop) %in% s0.fit$host)]
-    s0.fit.0 = as.data.frame(matrix(c(hPop.0, rep(1, length(hPop.0))), ncol = 2))
-    colnames(s0.fit.0) = colnames(s0.fit)
-    s0.fit = rbind(s0.fit, s0.fit.0)
-    s0.fit = s0.fit[order(s0.fit$host),]
+  s0.fit = aggregate(fitness ~ host + chromosome, data = s0.tpn, FUN = prod)
+  if(nrow(s0.fit) != (hPop * 2)){
+    hPop.0 = data.frame(host = seq_len(hPop), chromosome = rep(0:1, each = hPop), paste = paste0(seq_len(hPop), ";", rep(0:1, each = hPop)), fitness = NA)
+    s0.fit$paste = paste0(s0.fit$host, ";", s0.fit$chromosome)
+    hPop.0$fitness = s0.fit$fitness[match(hPop.0$paste, s0.fit$paste)]
+    hPop.0$fitness[is.na(hPop.0$fitness)] = 1
+    s0.fit = hPop.0; rm(hPop.0)
   }
-  s0.fit$fitness = s0.fit$fitness * as.numeric(sim.df$tpnFail == "")
   if(sum(s0.fit$fitness)==0){ eLim = -2; break }
 
-  # 4 Chromosome segregation
-  s0.fit = rbind(s0.fit, s0.fit)
-  s0.fit$chromosome = rep(c(0,1), each = hPop)
+  # 4 Pairing transposons & double-strand breaks with host fitness
+  if(length(grep("@", sim.df$tpnFail)) > 0){
+    s0.fit$fitness[c(grep("@", sim.df$tpnFail), hPop + grep("@", sim.df$tpnFail))] = 0
+    sim.df$tpnFail = sub("^;", "", sub("@", "", sim.df$tpnFail))
+  }
+  if(any(sim.df$tpnFail != "")){
+    t0 = strsplit(sim.df$tpnFail, ";")
+    for(i in which(sim.df$tpnFail != "")){
+      t0[[i]] = substr(t0[[i]], 1, 1)
+      s0.fit$fitness[c(i, hPop + i)] = s0.fit$fitness[c(i, hPop + i)] * !c("0" %in% t0[[i]], "1" %in% t0[[i]])
+    };rm(i,t0)
+  }
   s0.tpnSeg = aggregate(tpn ~ host + chromosome, data = s0.tpn, FUN = function(x){return(paste(x, collapse = ";"))})
   s0.tpnSeg = merge(s0.tpnSeg, s0.fit, all = T)
   s0.tpnSeg = s0.tpnSeg[order(s0.tpnSeg$chromosome, s0.tpnSeg$host),]

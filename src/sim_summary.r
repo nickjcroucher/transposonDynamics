@@ -8,6 +8,7 @@
 
 ##### extra env #####
 source("func_analysis.r")
+cBr = rainbow(ceiling(gEn/.7))[seq_len(gEn)]
 rec.gRecom0 = rec.gRecom[seq_len(gEn), , drop = FALSE]
 rec.host0 = rec.host[seq_len(gEn), , drop = FALSE]
 rec.offspring0 = rec.offspring[seq_len(gEn), , drop = FALSE]
@@ -29,8 +30,11 @@ rec.hostTraject = fAmily(r.os0, "haploid")/ncol(r.os0)
 suppressWarnings(matplot(x = seq_len(nrow(rec.hostTraject))-1, y = rec.hostTraject*100, col = cBp, xlim = c(0, gEn.max), ylim = c(0,100), xlab = "Generation", ylab = "Dominance (%)", main = paste0("Genealogy of Initial host (df = rec.hostTraject)\nrep = ",argv[3],", scenario = ",argv[5])))
 
 # cat(date(),": Population fitness evenness",argv[3],"-",argv[5],"\n")
-sDi = -rowSums(rec.Fitness0 * log(rec.Fitness0 + min(rec.Fitness0[rec.Fitness0>0])))
+sDi = -rowSums(a.ct <- rec.Fitness0 * log(rec.Fitness0 + min(rec.Fitness0[rec.Fitness0>0])))
 plot(x = seq_len(gEn)-1, y = sDi, type = "l", xlim = c(0, gEn.max), ylim = c(0, max(sDi)), xlab = "Generation", ylab = "Diversity index", main = paste0("Shannon diversity index on population fitness [N = ",hPop,"] \n(df = rec.Fitness) rep = ",argv[3],", scenario = ",argv[5]))
+
+a.ct = data.frame(generation = seq_len(gEn)-1, fitness = as.numeric(-a.ct))
+beeswarm(fitness ~ generation, data = a.ct, col = cBr[a.ct$generation + 1], corral = "wrap", ylab = "Individual Fitness", xlab = "Generation", main = paste0("Distribution of host fitness per generation [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
 
 ##### Transposon parameters mapping #####
 # cat(date(),": Distribution of transposons in the population",argv[3],"-",argv[5],"\n")
@@ -40,7 +44,6 @@ plot(x = seq_len(gEn)-1, y = sDi, type = "l", xlim = c(0, gEn.max), ylim = c(0, 
 #   i1 = range(i1, tIh[[i]]$y)
 # };rm(i)
 # plot(x = i0, y = i1, col = "#00000000", xlab = "Transposon count", ylab = "Density", main = paste0("Distribution of transposon copy number per generation [N = ",hPop,"] \n(df = rec.tpnCount) rep = ",argv[3],", scenario = ",argv[5]))
-cBr = rainbow(ceiling(nrow(rec.tpnCount0)/.7))[seq_len(nrow(rec.tpnCount0))]
 
 # for(i in seq_len(length(tIh))){
 #   # hist(rec.tpnCount0[i,], border = "", add = TRUE)
