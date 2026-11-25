@@ -433,9 +433,9 @@ GFITNESS_TABLE <- "
 "
 
 ##### 4. Tests #####
-test_that("189256: none of sim.df$transposon is an empty string or NA", {
+test_that("Jump 0, Copy 0, Recom 0: none of sim.df$transposon is an empty string or NA", {
   skip_integration()
-  run <- run_case(189256)
+  run <- run_case(639672)
   expect_true(run$ok, info = run$tail)
   if (!run$ok) return(invisible())
   tr <- run$state$transposon
@@ -444,27 +444,27 @@ test_that("189256: none of sim.df$transposon is an empty string or NA", {
               info = paste(ended(run$state), "| empty for hosts", paste(which(!is.na(tr) & !nzchar(tr)), collapse = ", ")))
 })
 
-test_that("189253: i.cp has length 0 and reCom is FALSE", {
+test_that("Jump 0.1, Copy 0, Recom 0: i.cp has length 0 and reCom is FALSE", {
   skip_integration()
-  run <- run_case(189253)
+  run <- run_case(639667)
   expect_true(run$ok, info = run$tail)
   if (!run$ok) return(invisible())
   expect_identical(run$state$i.cp, 0L, info = paste(ended(run$state), "|", ABSENT))
   expect_identical(run$state$reCom, FALSE, info = ended(run$state))
 })
 
-test_that("189220: i.mv has length 0 and reCom is FALSE", {
+test_that("Jump 0, Copy 0.1, Recom 0: i.mv has length 0 and reCom is FALSE", {
   skip_integration()
-  run <- run_case(189220)
+  run <- run_case(639582)
   expect_true(run$ok, info = run$tail)
   if (!run$ok) return(invisible())
   expect_identical(run$state$i.mv, 0L, info = paste(ended(run$state), "|", ABSENT))
   expect_identical(run$state$reCom, FALSE, info = ended(run$state))
 })
 
-test_that("186664: i.mv and i.cp both have length 0", {
+test_that("Jump 0, Copy 0, Recom 0.1: i.mv and i.cp both have length 0", {
   skip_integration()
-  run <- run_case(186664)
+  run <- run_case(629952)
   expect_true(run$ok, info = run$tail)
   if (!run$ok) return(invisible())
   expect_identical(run$state$i.mv, 0L, info = paste(ended(run$state), "|", ABSENT))
