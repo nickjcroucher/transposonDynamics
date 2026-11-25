@@ -7,7 +7,7 @@
 # arg: 0
 # date: 20260707,20260721
 
-pRt = 0
+pRt = 1
 
 ##### Set transposon simulation scenarios #####
 cat(date(),": set transposon table\n")
@@ -18,9 +18,9 @@ pAr = list(
   valid = T,
   uniqID = "",
   size = 1000,
-  jumpRate = c(10^-(1:3),0),
+  jumpRate = c(10^-(1:5),0),
   jumpH1 = c("fixed", "charlesworth", "evolving"),
-  copyRate = c(10^-(1:3),0),
+  copyRate = c(10^-(1:5),0),
   copyH1 = c("fixed", "charlesworth", "evolving"),
   copyDir = c("both", "terminus", "origin")
 )
@@ -47,7 +47,7 @@ if(pRt>0){write.csv(a, "../raw/template-tpn.csv", row.names = F, quote = F)}
 
 ##### Set cell simulation scenarios #####
 cat(date(),": set host cell table\n")
-rEcom = c(10^-(1:3),0)
+rEcom = c(10^-(1:5),0)
 rEcH1 = c("switch", "homeostatic")
 pAr = list(
   cell = c("haploid", "diploid"),
@@ -85,5 +85,5 @@ sceSet = function(jp = 0, jH = "fixed", cp = 0, cH = "fixed", cD = "both", rc = 
 # res = as.data.frame(cbind(rep(seq_len(10), each = length(res)), res))
 
 ##### Set scenarios #####
-res = sceSet(jp = unique(a$jumpRate), cp = unique(a$copyRate), rc = unique(a0$recom), cT = unique(a0$cell), hAR = c(.2, .5, .8))
+res = sceSet(jp = c(.01, .001, .0001), cp = c(.01, .001, .0001), rc = c(.01, .001, .0001), cT = "haploid", hAR = .5)
 if(pRt>0){write.table(unique(res), "../data/rerun.csv", sep = ",", row.names = F, col.names = F, quote = F)}

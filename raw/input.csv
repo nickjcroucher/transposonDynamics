@@ -5,7 +5,7 @@ genes for recombination mechanism,SPD_2063;SPD_2064;SPD_2065;SPD_1739;SPD_1015;S
 essential gene scheme,strict,"three options: strict (gene fitness == 0), relaxed (gene fitness < 25% of distribution), core (gene fitness < median)"
 host organism constant generation number,200,
 host organism constant population size,1000,
-host genome variation,3,any positive number
+host genome variation,10,any positive number
 host genetic variation,10,"1-26: 1 = homogeneous initial population; max 52 variations per gene; can specify variation for each gene using separator "";"""
 transposon population size per genome mean,3,high number indicates more transposons detected per genome
 percentage transposon perturbation genotoxic,0.1,
