@@ -56,7 +56,7 @@ SKIP_INTEGRATION <- tolower(Sys.getenv("TPN_SKIP_INTEGRATION")) %in% c("true", "
 skip_integration <- function() skip_if(SKIP_INTEGRATION, "TPN_SKIP_INTEGRATION is set")
 
 # Runs to test, in rerun.csv's format: seed index (row of seed.csv), scenario number (row of scenario.csv)
-RERUN <- data.frame(seed = 1L, scenario = c(189256L, 189253L, 189220L, 186664L))
+RERUN <- data.frame(seed = 1L, scenario = c(639672, 639667, 639582, 629952))
 
 GFITNESS_MD5 <- "78997b2adeeb616aa630c52bee023a40"     # MD5 of the original data/gFitness.csv
 GFF_NAME <- "GCA_000014365.gff"
